@@ -8,8 +8,16 @@ type ReaderConfig struct {
 	Name      string
 }
 
+type WriterConfig struct {
+	IPAddress string
+	Port int
+	Name string
+	// ...
+}
+
 type Config struct {
-	ReaderConfig ReaderConfig
+	InputStreams []ReaderConfig
+	OutputStream WriterConfig
 	// ...
 }
 

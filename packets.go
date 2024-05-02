@@ -5,7 +5,7 @@ import (
 	"errors"
 )
 
-type OTWTPacket []byte
+type OTWPacket []byte
 
 // MpegTSPacket represents a single MPEG-TS packet.
 type MpegTSPacket struct {
@@ -37,7 +37,7 @@ type PesPacket struct {
 // PacketAssembler interface provides functions for disassembling and reassembling packets.
 type PacketAssembler interface {
 	// DisassemblePacket disassembles an MPEG-TS packet into its constituent parts.
-	DisassemblePacket(packet OTWTPacket) error
+	DisassemblePacket(packet OTWPacket) error
 
 	// AdjustBitrate adjusts the bitrate of the packet based on the target bitrate.
 	AdjustBitrate(targetBitrate int) error
@@ -46,10 +46,10 @@ type PacketAssembler interface {
 	CalculateTimeValues(timestampBytes []byte) error
 
 	// ReassemblePacket reassembles an MPEG-TS packet from its constituent parts.
-	ReassemblePacket() (OTWTPacket, error)
+	ReassemblePacket() (OTWPacket, error)
 }
 
-func DisassemblePacket(wp OTWTPacket) (interface{}, error) {
+func DisassemblePacket(wp OTWPacket) (interface{}, error) {
 	// Create a new MpegTSPacket or PesPacket from an OTW Packet
 	var packet interface{}
 	switch wp[0] {
@@ -67,7 +67,7 @@ func DisassemblePacket(wp OTWTPacket) (interface{}, error) {
 	return packet, nil
 }
 
-func (p *MpegTSPacket) DisassemblePacket(wp OTWTPacket) error {
+func (p *MpegTSPacket) DisassemblePacket(wp OTWPacket) error {
 	if len(wp) < 188 {
 		return errors.New("invalid MPEG-TS packet length")
 	}
@@ -96,12 +96,12 @@ func (p *MpegTSPacket) CalculateTimeValues(timestamps []byte) error {
 	return nil
 }
 
-func (p *MpegTSPacket) ReassemblePacket() (OTWTPacket, error) {
+func (p *MpegTSPacket) ReassemblePacket() (OTWPacket, error) {
 	// Reassemble an OTW packet from p
 	return nil, nil
 }
 
-func (p *PesPacket) DisassemblePacket(wp OTWTPacket) error {
+func (p *PesPacket) DisassemblePacket(wp OTWPacket) error {
 	if len(wp) < 15 {
 		return errors.New("invalid PES packet length")
 	}
@@ -129,7 +129,7 @@ func (p *PesPacket) CalculateTimeValues(timestamps []byte) error {
 	return nil
 }
 
-func (p *PesPacket) ReassemblePacket() (OTWTPacket, error) {
+func (p *PesPacket) ReassemblePacket() (OTWPacket, error) {
 	// Reassemble an OTW packet from p
 	return nil, nil
 }

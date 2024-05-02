@@ -22,7 +22,7 @@ func main() {
 	var wg sync.WaitGroup
 
 	// Create a channel for receiving OTW packets from readers
-	otwPacketCh := make(chan OTWTPacket)
+	otwPacketCh := make(chan OTWPacket)
 
 	// Create a channel to handle OS signals
 	sigCh := make(chan os.Signal, 1)

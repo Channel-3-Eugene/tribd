@@ -72,7 +72,7 @@ type OutputStream struct {
 
 
 // Write writes data to the output stream via UDP.
-func (outputStream *OutputStream) Write(p OTWTPacket) (int, error) {
+func (outputStream *OutputStream) Write(p OTWPacket) (int, error) {
 	if outputStream.conn == nil {
 		addr := net.UDPAddr{
 			IP:   net.ParseIP(outputStream.IPAddress),

@@ -28,6 +28,7 @@ const (
 	MaxPCRValue = (1 << 33) - 1
 )
 
+// TestCalculateAdaptationFieldLength tests the function to calculate the adaptation field length.
 func TestCalculateAdaptationFieldLength(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -131,6 +132,7 @@ func randIntn(n int) int {
 	return int(b[0]) % n
 }
 
+// TestGenerateMPEGTSPackets tests the function to generate MPEG-TS packets.
 func TestGenerateMPEGTSPackets(t *testing.T) {
 	t.Run("GenerateZeroPackets", func(t *testing.T) {
 		count := 0
@@ -175,6 +177,7 @@ func TestGenerateMPEGTSPackets(t *testing.T) {
 	})
 }
 
+// TestMPEGTSPacketIntegrity tests the integrity of MPEG-TS packets.
 func TestMPEGTSPacketIntegrity(t *testing.T) {
 	t.Run("GeneratePacketsWithContinuityCounterWrapAround", func(t *testing.T) {
 		count := 20
@@ -244,7 +247,6 @@ func TestMPEGTSPacketIntegrity(t *testing.T) {
 		packetCount := 1
 
 		packets, err := GenerateMPEGTSPackets(packetCount)
-		println("Single packet", packets)
 
 		assert.NoError(t, err)
 		assert.Len(t, packets, packetCount)
@@ -278,5 +280,4 @@ func TestMPEGTSPacketIntegrity(t *testing.T) {
 			})
 		}
 	})
-
 }

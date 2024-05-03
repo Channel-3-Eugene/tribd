@@ -5,8 +5,10 @@ import (
 	"errors"
 )
 
+// EncodedPacket represents a raw MPEG-TS packet.
 type EncodedPacket [188]byte
 
+// Adaptations represents various adaptation field parameters in an MPEG-TS packet.
 type Adaptations struct {
 	PCR                      uint64 // Program Clock Reference (PCR)
 	DTS                      uint64 // Decode Time Stamp (DTS)
@@ -16,6 +18,7 @@ type Adaptations struct {
 	UnusedData               []byte // Carried forward unused data
 }
 
+// DecodedPacket represents the decoded headers of an MPEG-TS packet.
 type DecodedPacket struct {
 	SyncByte          byte        // Sync byte indicating the start of the packet
 	TransportError    bool        // Transport Error Indicator (TEI)
@@ -27,6 +30,7 @@ type DecodedPacket struct {
 	ContinuityCounter uint8       // Continuity Counter
 }
 
+// Packet represents an MPEG-TS packet along with its headers, adaptations, payload, and error status.
 type Packet struct {
 	Encoded     EncodedPacket  // Raw packet
 	Decoded     *DecodedPacket // Headers
@@ -35,6 +39,7 @@ type Packet struct {
 	Error       error          // Error, or nil
 }
 
+// Error constants
 var (
 	ErrInvalidSyncByte         = errors.New("mpegts: invalid sync byte")
 	ErrInvalidPacketSize       = errors.New("mpegts: invalid packet size")
@@ -50,6 +55,7 @@ var (
 	ErrUnsupportedStream       = errors.New("mpegts: unsupported stream type")
 )
 
+// NewPacket creates a new Packet instance from the given encoded packet.
 func NewPacket(encodedPacket EncodedPacket) (*Packet, error) {
 	if encodedPacket[0] != 0x47 {
 		return nil, ErrInvalidSyncByte
@@ -90,7 +96,7 @@ func NewPacket(encodedPacket EncodedPacket) (*Packet, error) {
 	return packet, nil
 }
 
-// DecodeMultiplexingAdaptationField decodes the adaptation field from a byte slice
+// NewAdaptations decodes the adaptation field from a byte slice
 func NewAdaptations(data []byte) (*Adaptations, error) {
 	if len(data) < 1 {
 		return nil, ErrInvalidAdaptationsField

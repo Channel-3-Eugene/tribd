@@ -20,7 +20,7 @@ type PLL struct {
 
 	integral  int       // Integral term for PID controller
 	lastTick  time.Time // last tick time
-	lastDelta int       // Last error for PID controller
+	lastDelta int       // Last delta (error) for PID controller
 
 	mu sync.Mutex
 }
@@ -76,6 +76,8 @@ func (pll *PLL) Stop() {
 }
 
 // pidController implements a PID controller for adjusting the PLL output signal
+// all math is integer math here
+// we are adjusting the delay to get event to happen near the next tick
 func (pll *PLL) pidController(delta time.Duration) {
 	porportional := int(delta) * pll.kp / 100
 	pll.integral += int(delta) * pll.ki / 100

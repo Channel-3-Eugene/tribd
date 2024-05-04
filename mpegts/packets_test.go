@@ -1,6 +1,7 @@
 package mpegts
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
@@ -59,6 +60,48 @@ func TestCalculateAdaptationFieldLength(t *testing.T) {
 		})
 	}
 }
+
+// generateRandomPacket generates a random EncodedPacket.
+func generateRandomPacket() EncodedPacket {
+	var packet EncodedPacket
+
+	// Fill the packet with random bytes
+	for i := 0; i < len(packet); i++ {
+		packet[i] = byte(randIntn(256))
+	}
+
+	// Ensure the sync byte is correct
+	packet[0] = 0x47
+
+	return packet
+}
+
+// TestRoundTrip tests the round-trip encoding and decoding of packets.
+func TestRoundTrip(t *testing.T) {
+	const numPackets = 1000 // Number of packets to generate and test
+
+	for i := 0; i < numPackets; i++ {
+		// Generate a random packet
+		originalPacket := generateRandomPacket()
+
+		// Decode the original packet
+		decodedPacket, err := NewPacket(originalPacket)
+		if err != nil {
+			t.Errorf("Error decoding packet: %v", err)
+			continue
+		}
+
+		// Re-encode the decoded packet
+		decodedPacket.Encode()
+
+		// Ensure the original and re-encoded bytes are identical
+		if !bytes.Equal(originalPacket[:], decodedPacket.Encoded[:]) {
+			t.Errorf("Round trip failed: original packet and re-encoded packet differ")
+		}
+	}
+}
+
+// Generator with tests for MPEG-TS packets
 
 // GenerateMPEGTSPackets generates a series of MPEG-TS packets representing a section of a stream containing one PES across multiple TS packets.
 func GenerateMPEGTSPackets(count int) ([]EncodedPacket, error) {

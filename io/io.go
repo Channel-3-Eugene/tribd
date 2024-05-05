@@ -97,7 +97,7 @@ func (outputStream *OutputStream) Write(p mpegts.EncodedPacket) (int, error) {
 		}
 		outputStream.conn = conn
 	}
-	return outputStream.conn.Write(p[:])
+	return outputStream.conn.Write(p[:]) // Put packets in a buffer of a configurable size and write when full (aggregation config approximately 1 - 40)
 }
 
 // Close closes the output stream.

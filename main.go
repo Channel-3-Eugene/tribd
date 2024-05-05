@@ -5,31 +5,22 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-)
-
-package main
-
-import (
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
 	"time"
 )
 
 // TokenBucketController represents a token bucket controller.
 type TokenBucketController struct {
-	rate          float64 // Rate of token replenishment (tokens per second)
-	tokenBucket   chan struct{}
-	quitCh        chan struct{}
+	rate        float64 // Rate of token replenishment (tokens per second)
+	tokenBucket chan struct{}
+	quitCh      chan struct{}
 }
 
 // NewTokenBucketController creates a new token bucket controller.
 func NewTokenBucketController(rate float64, bucketSize int) *TokenBucketController {
 	return &TokenBucketController{
-		rate:          rate,
-		tokenBucket:   make(chan struct{}, bucketSize),
-		quitCh:        make(chan struct{}),
+		rate:        rate,
+		tokenBucket: make(chan struct{}, bucketSize),
+		quitCh:      make(chan struct{}),
 	}
 }
 
@@ -72,7 +63,7 @@ func (inputStream *InputStream) Start(otwPacketCh chan<- OTWPacket, stopCh <-cha
 func main() {
 	// Read and parse config
 	var c Config
-	closer, err := c.Read(...)
+	closer, err := c.Read()
 	if err != nil {
 		// Handle error
 	}
@@ -123,7 +114,7 @@ func main() {
 	}
 
 	// Start a new writer from the config
-	writer := NewWriter(...)
+	writer := io.NewWriter()
 
 	// Switch for receiving OTW packets and writing them with a writer defined in c.Writer
 	for {

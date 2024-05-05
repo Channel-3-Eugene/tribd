@@ -1,31 +1,12 @@
 package mpegts
 
 import (
-	"crypto/rand"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-)
-
-// PIDs for video, audio, and data streams
-const (
-	packetLength = 188
-	headerLength = 4
-
-	VideoPID = 0x101
-	AudioPID = 0x102
-	DataPID  = 0x103
-)
-
-// PCR constants
-const (
-	// PCR frequency in Hz
-	PCRFrequency = 27000000
-	// Maximum PCR value
-	MaxPCRValue = (1 << 33) - 1
 )
 
 // TestSettingAndClearingTEI tests the setting and clearing of the TEI flag.
@@ -280,18 +261,23 @@ func TestAdaptationFieldHandling(t *testing.T) {
 	assert.Equal(t, adaptationField, retrievedAdaptationField, "The set and retrieved adaptation fields do not match")
 }
 
-// TestPCRHandling tests setting and retrieving the PCR value.
 func TestPCRHandling(t *testing.T) {
 	packet := &EncodedPacket{}
 	packet[0] = 0x47    // Set the sync byte
-	packet.SetAFC(0x02) // Adaptation field only, for simplicity
+	packet.SetAFC(0x03) // Ensure adaptation field with PCR capability
 
-	// Set and get PCR value
-	originalPCR := uint64(1234567890)
-	packet.SetPCR(originalPCR)
+	// Initialize adaptation field length sufficiently for PCR
+	packet[4] = 7
+	packet[5] = 0x10 // Ensure PCR flag is set
+
+	// Set and retrieve a PCR value
+	originalPCR := uint64(411123456789) // Using a realistic PCR value within the 33-bit range
+	packet.SetPCR(originalPCR)          // SetPCR without frequency conversion
 	retrievedPCR := packet.GetPCR()
 
-	assert.Equal(t, originalPCR, retrievedPCR, "The set and retrieved PCR values do not match")
+	if originalPCR != retrievedPCR {
+		t.Errorf("The set and retrieved PCR values do not match. Expected: %d, Got: %d", originalPCR, retrievedPCR)
+	}
 }
 
 // TestOPCRHandling tests setting and retrieving the OPCR value.
@@ -391,80 +377,6 @@ func TestCalculateAdaptationFieldLength(t *testing.T) {
 			}
 		})
 	}
-}
-
-// Generator with tests for MPEG-TS packets
-
-// GenerateMPEGTSPackets generates a series of MPEG-TS packets representing a section of a stream containing one PES across multiple TS packets.
-func GenerateMPEGTSPackets(count int) ([]EncodedPacket, error) {
-	if count < 1 {
-		return nil, errors.New("count must be greater than 0")
-	}
-
-	// Randomly select a PID from video, audio, or data types
-	pids := []uint16{VideoPID, AudioPID, DataPID}
-	pid := pids[randIntn(len(pids))]
-
-	packets := make([]EncodedPacket, count)
-
-	// Calculate PCR increment
-	pcrIncrement := MaxPCRValue / uint64(count)
-
-	// Generate packets
-	for i := 0; i < count; i++ {
-		packet := EncodedPacket{}
-
-		// Set sync byte
-		packet[0] = 0x47
-
-		// Set adaptation field control bits (adaptation field present, payload present)
-		packet[3] = 0x30 // Adaptation field present, payload present
-
-		// Set PID
-		packet[1] = byte(pid >> 8)   // Set PID high byte
-		packet[2] = byte(pid & 0xFF) // Set PID low byte
-
-		// Set PUSI bit only on the first packet
-		if i == 0 {
-			packet[1] |= 0x40
-		}
-
-		// Set continuity counter
-		packet[3] |= byte(i & 0x0F)
-
-		// Set PCR value
-		pcr := uint64(i) * pcrIncrement
-		SetPCR(&packet, pcr, PCRFrequency)
-
-		// Calculate and set adaptation field length
-		adaptationFieldLength := calculateAdaptationFieldLength(&packet)
-		packet[4] = byte(adaptationFieldLength - 1) // Set adaptation field length byte
-
-		// Generate random payload
-		payloadLength := packetLength - headerLength - adaptationFieldLength
-		payload := make([]byte, payloadLength)
-		if _, err := rand.Read(payload); err != nil {
-			return nil, err
-		}
-		copy(packet[headerLength+adaptationFieldLength:], payload)
-
-		packets[i] = packet
-	}
-
-	return packets, nil
-}
-
-// randIntn returns a random integer in the range [0, n)
-func randIntn(n int) int {
-	if n <= 0 {
-		panic("invalid argument to randIntn")
-	}
-	b := make([]byte, 1)
-	_, err := rand.Read(b)
-	if err != nil {
-		panic(err)
-	}
-	return int(b[0]) % n
 }
 
 // TestGenerateMPEGTSPackets tests the function to generate MPEG-TS packets.

@@ -28,6 +28,16 @@ type EncodedPacket [188]byte
 // EncodedPackets represents a collection of raw MPEG-TS packets.
 type EncodedPackets []*EncodedPacket
 
+// NewMPEGTSPacket creates a new MPEG-TS packet from a 188-byte array.
+// It validates the packet to ensure it starts with the correct sync byte (0x47).
+func NewMPEGTSPacket(data [188]byte) (*EncodedPacket, error) {
+	if data[0] != 0x47 {
+		return nil, ErrInvalidSyncByte // Ensure sync byte is correct
+	}
+	packet := EncodedPacket(data) // Directly use the data as EncodedPacket
+	return &packet, nil
+}
+
 // IsMPEGTS checks if the packet begins with the MPEG-TS sync byte.
 func (ep *EncodedPacket) IsMPEGTS() bool {
 	return ep[0] == 0x47
@@ -87,6 +97,12 @@ func (ep *EncodedPacket) SetPID(pid uint16) {
 	// Set the new PID
 	ep[1] |= byte(pid >> 8)   // Set the upper 5 bits of the PID
 	ep[2] |= byte(pid & 0xFF) // Set the lower 8 bits of the PID
+}
+
+// IsNullPacket checks if the packet is a null packet (PID 0x1FFF).
+func (ep *EncodedPacket) IsNullPacket() bool {
+	pid := int(ep[1]&0x1F)<<8 + int(ep[2])
+	return pid == 0x1FFF
 }
 
 // GetTSC returns the Transport Scrambling Control (TSC) field of the packet.
@@ -169,21 +185,6 @@ func (ep *EncodedPacket) SetAdaptationField(af []byte) {
 	}
 }
 
-// GetPCR returns the Program Clock Reference (PCR) value from the adaptation field.
-func (ep *EncodedPacket) GetPCR() uint64 {
-	if ep.GetAFC() == 0x02 || ep.GetAFC() == 0x03 {
-		return binary.BigEndian.Uint64(ep[5:13]) & 0x1FFFFFFFFFFFF
-	}
-	return 0
-}
-
-// SetPCR sets the Program Clock Reference (PCR) value in the adaptation field.
-func (ep *EncodedPacket) SetPCR(pcr uint64) {
-	if ep.GetAFC() == 0x02 || ep.GetAFC() == 0x03 {
-		binary.BigEndian.PutUint64(ep[5:13], pcr)
-	}
-}
-
 // GetOPCR returns the Original Program Clock Reference (OPCR) value from the adaptation field.
 func (ep *EncodedPacket) GetOPCR() uint64 {
 	if ep.GetAFC() == 0x03 {
@@ -259,24 +260,57 @@ func calculateAdaptationFieldLength(packet *EncodedPacket) int {
 	return 0
 }
 
-// SetPCR sets the PCR value in the adaptation field of the MPEG-TS packet header.
-// PCR frequency is the frequency of the Program Clock Reference in Hz.
-func SetPCR(packet *EncodedPacket, pcr uint64, pcrFrequency uint64) {
-	// PCR base is 33 bits, divided into two 33-bit fields in the MPEG-TS header
-	// PCR extension is 9 bits
-	// The PCR is divided by the PCR frequency to get the value in PCR units (in Hz)
-	pcrBase := pcr / pcrFrequency
-	pcrExt := pcr % pcrFrequency
-	adaptationFieldStart := 4
+// GetPCR returns the Program Clock Reference (PCR) value from the adaptation field.
+// We are assuming a standard 27 MHz clock frequency for the PCR.
+func (ep *EncodedPacket) SetPCR(pcr uint64) {
+	pcrBase := pcr / 300      // Divide by 300 to convert to base unit
+	pcrExtension := pcr % 300 // Modulus 300 to find the extension
 
-	// Set adaptation field control to indicate PCR presence
-	packet[adaptationFieldStart] |= 0x10 // Set PCR flag
+	afc := ep.GetAFC()
+	if afc != 0x02 && afc != 0x03 {
+		ep.SetAFC(0x03) // Ensure the adaptation field is set to contain a PCR
+	}
 
-	// Set PCR fields in adaptation field
-	packet[adaptationFieldStart+1] = byte(pcrBase >> 25)
-	packet[adaptationFieldStart+2] = byte(pcrBase >> 17)
-	packet[adaptationFieldStart+3] = byte(pcrBase >> 9)
-	packet[adaptationFieldStart+4] = byte(pcrBase >> 1)
-	packet[adaptationFieldStart+5] = byte(pcrBase<<7 | (pcrExt>>8)&0x7F)
-	packet[adaptationFieldStart+6] = byte(pcrExt & 0xFF)
+	// Ensure adaptation field length is enough to hold PCR (minimum 7 bytes)
+	if ep[4] < 7 {
+		ep[4] = 7
+		for i := 5; i < 12; i++ {
+			ep[i] = 0
+		}
+	}
+
+	ep[5] |= 0x10 // Set the PCR flag
+
+	// Set PCR base and extension
+	ep[6] = byte(pcrBase >> 25)
+	ep[7] = byte(pcrBase >> 17)
+	ep[8] = byte(pcrBase >> 9)
+	ep[9] = byte(pcrBase >> 1)
+	ep[10] = (byte(pcrBase<<7) & 0x80) | (byte(pcrExtension>>8) & 0x01)
+	ep[11] = byte(pcrExtension & 0xFF)
+}
+
+// GetPCR returns the Program Clock Reference (PCR) value from the adaptation field.
+func (ep *EncodedPacket) GetPCR() uint64 {
+	if (ep.GetAFC() == 0x02 || ep.GetAFC() == 0x03) && (ep[5]&0x10 == 0x10) {
+		pcrBase := uint64(ep[6])<<25 | uint64(ep[7])<<17 | uint64(ep[8])<<9 | uint64(ep[9])<<1 | uint64(ep[10]>>7)
+		pcrExtension := uint64(ep[10]&0x01)<<8 | uint64(ep[11])
+		return pcrBase*300 + pcrExtension
+	}
+	return 0
+}
+
+// ClearPCR removes the PCR data from the packet if it exists.
+func (ep *EncodedPacket) ClearPCR() {
+	afc := ep.GetAFC()
+	if afc == 0x02 || afc == 0x03 { // Check if the adaptation field is present
+		afLength := int(ep[4])
+		if afLength > 0 && (ep[5]&0x10) != 0 { // Check if PCR flag is set
+			ep[5] &= 0xEF // Clear the PCR flag
+			// Zero out PCR fields (6 bytes following the adaptation field length)
+			for i := 6; i <= 11; i++ {
+				ep[5+i] = 0
+			}
+		}
+	}
 }

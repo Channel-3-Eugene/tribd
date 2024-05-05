@@ -1,9 +1,12 @@
 package fifobuffer
 
 import (
-	"github.com/stretchr/testify/assert"
+	"crypto/rand"
+	"encoding/binary"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestFIFOBufferInitialization(t *testing.T) {
@@ -11,24 +14,53 @@ func TestFIFOBufferInitialization(t *testing.T) {
 	assert.Equal(t, 0, len(buf.queue), "Buffer should be initialized empty")
 }
 
-func TestPush(t *testing.T) {
-	buf := NewFIFOBuffer[int]()
-	buf.Push(1)
-	buf.Push(2)
-	assert.Equal(t, 2, len(buf.queue), "Buffer should contain two items after two pushes")
+// Generate a random integer using crypto/rand
+func randomInt() int {
+	var n int32
+	binary.Read(rand.Reader, binary.BigEndian, &n) // Reads a 32-bit integer
+	return int(n)
 }
 
-func TestPop(t *testing.T) {
+// Generate a slice of random integers with a length up to maxSize
+func randomIntSlice(maxSize int) []int {
+	size := randomInt() % maxSize // Ensure size is within the bounds
+	if size < 0 {
+		size = -size // Convert negative size to positive
+	}
+	if size == 0 {
+		size = 1 // Ensure at least one element
+	}
+
+	nums := make([]int, size)
+	for i := range nums {
+		nums[i] = randomInt()
+	}
+	return nums
+}
+
+func TestPushRandom(t *testing.T) {
 	buf := NewFIFOBuffer[int]()
-	buf.Push(1)
-	buf.Push(2)
-	item, ok := buf.Pop()
-	assert.True(t, ok, "Pop should succeed")
-	assert.Equal(t, 1, item, "First item should be 1")
-	item, ok = buf.Pop()
-	assert.True(t, ok, "Pop should succeed")
-	assert.Equal(t, 2, item, "Second item should be 2")
-	_, ok = buf.Pop()
+	randomNumbers := randomIntSlice(10) // Generate a random slice with up to 10 integers
+	for _, num := range randomNumbers {
+		buf.Push(num)
+	}
+	assert.Equal(t, len(randomNumbers), len(buf.queue), "Buffer should contain the same number of items as pushes")
+}
+
+func TestPopRandom(t *testing.T) {
+	buf := NewFIFOBuffer[int]()
+	randomNumbers := randomIntSlice(10) // Generate a random slice with up to 10 integers
+	for _, num := range randomNumbers {
+		buf.Push(num)
+	}
+
+	for _, expectedNum := range randomNumbers {
+		item, ok := buf.Pop()
+		assert.True(t, ok, "Pop should succeed")
+		assert.Equal(t, expectedNum, item, "Popped item should match the pushed order")
+	}
+
+	_, ok := buf.Pop()
 	assert.False(t, ok, "Pop should fail on empty buffer")
 }
 

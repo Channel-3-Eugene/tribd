@@ -136,7 +136,8 @@ func (ep *EncodedPacket) SetCC(cc uint8) {
 // GetPayload returns the payload of the packet.
 func (ep *EncodedPacket) GetPayload() []byte {
 	if ep.GetAFC() == 0x01 {
-		return ep[4 : 4+ep[4]]
+		length := int(ep[4])
+		return ep[5 : 5+length]
 	}
 	return ep[4:]
 }
@@ -154,7 +155,8 @@ func (ep *EncodedPacket) SetPayload(payload []byte) {
 // GetAdaptationField returns the adaptation field of the packet.
 func (ep *EncodedPacket) GetAdaptationField() []byte {
 	if ep.GetAFC() == 0x02 || ep.GetAFC() == 0x03 {
-		return ep[4 : 4+ep[4]]
+		length := int(ep[4])
+		return ep[5 : 5+length]
 	}
 	return nil
 }
@@ -215,7 +217,8 @@ func (ep *EncodedPacket) SetSpliceCountdown(sc uint8) {
 // GetTransportPrivateData returns the Transport Private Data from the adaptation field.
 func (ep *EncodedPacket) GetTransportPrivateData() []byte {
 	if ep.GetAFC() == 0x03 {
-		return ep[22 : 22+ep[22]]
+		length := ep[22]          // Get the length of the transport private data
+		return ep[23 : 23+length] // Correct slicing to exclude the length byte
 	}
 	return nil
 }
@@ -231,7 +234,9 @@ func (ep *EncodedPacket) SetTransportPrivateData(tpd []byte) {
 // GetAdaptationFieldExtension returns the Adaptation Field Extension from the adaptation field.
 func (ep *EncodedPacket) GetAdaptationFieldExtension() []byte {
 	if ep.GetAFC() == 0x03 {
-		return ep[22+ep[22] : 22+ep[22]+ep[22+ep[22]]]
+		start := 22 + ep[22]                // Calculate the starting position correctly
+		length := ep[start]                 // Get the length of the extension from the start position
+		return ep[start+1 : start+1+length] // Correct slicing to exclude the length byte
 	}
 	return nil
 }

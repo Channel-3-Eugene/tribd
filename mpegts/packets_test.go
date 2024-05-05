@@ -256,12 +256,109 @@ func TestSetAFC(t *testing.T) {
 	assert.Equal(t, 0, adaptationFieldLength, "Adaptation field length should be 0 when adaptation is disabled")
 }
 
+func TestPayloadHandling(t *testing.T) {
+	packet := &EncodedPacket{}
+	packet[0] = 0x47
+	packet.SetAFC(0x01) // Set AFC to ensure payload includes a length byte.
+
+	payload := []byte("test payload")
+	packet.SetPayload(payload)
+	retrievedPayload := packet.GetPayload()
+
+	assert.Equal(t, payload, retrievedPayload, "The set and retrieved payloads do not match")
+}
+
+func TestAdaptationFieldHandling(t *testing.T) {
+	packet := &EncodedPacket{}
+	packet[0] = 0x47
+	packet.SetAFC(0x03) // Set AFC to ensure adaptation field includes a length byte.
+
+	adaptationField := []byte{0x0A, 0xBB, 0xCC} // Example adaptation field data
+	packet.SetAdaptationField(adaptationField)
+	retrievedAdaptationField := packet.GetAdaptationField()
+
+	assert.Equal(t, adaptationField, retrievedAdaptationField, "The set and retrieved adaptation fields do not match")
+}
+
+// TestPCRHandling tests setting and retrieving the PCR value.
+func TestPCRHandling(t *testing.T) {
+	packet := &EncodedPacket{}
+	packet[0] = 0x47    // Set the sync byte
+	packet.SetAFC(0x02) // Adaptation field only, for simplicity
+
+	// Set and get PCR value
+	originalPCR := uint64(1234567890)
+	packet.SetPCR(originalPCR)
+	retrievedPCR := packet.GetPCR()
+
+	assert.Equal(t, originalPCR, retrievedPCR, "The set and retrieved PCR values do not match")
+}
+
+// TestOPCRHandling tests setting and retrieving the OPCR value.
+func TestOPCRHandling(t *testing.T) {
+	packet := &EncodedPacket{}
+	packet[0] = 0x47    // Set the sync byte
+	packet.SetAFC(0x03) // Adaptation field followed by payload
+
+	originalOPCR := uint64(9876543210)
+	packet.SetOPCR(originalOPCR)
+	retrievedOPCR := packet.GetOPCR()
+
+	assert.Equal(t, originalOPCR, retrievedOPCR, "The set and retrieved OPCR values do not match")
+}
+
+// TestSpliceCountdownHandling tests setting and retrieving the splice countdown value.
+func TestSpliceCountdownHandling(t *testing.T) {
+	packet := &EncodedPacket{}
+	packet[0] = 0x47
+	packet.SetAFC(0x03) // Assume adaptation field followed by payload includes splice countdown
+
+	originalCountdown := uint8(10)
+	packet.SetSpliceCountdown(originalCountdown)
+	retrievedCountdown := packet.GetSpliceCountdown()
+
+	assert.Equal(t, originalCountdown, retrievedCountdown, "The set and retrieved splice countdown values do not match")
+}
+
 // Assuming these function stubs exist
 func ParsePacket(data []byte) (*EncodedPacket, error) {
 	if len(data) != 188 {
 		return nil, errors.New("invalid packet size")
 	}
 	return &EncodedPacket{}, nil
+}
+
+// TestTransportPrivateDataHandling tests setting and retrieving transport private data.
+func TestTransportPrivateDataHandling(t *testing.T) {
+	packet := &EncodedPacket{}
+	packet[0] = 0x47
+	packet.SetAFC(0x03) // Ensure AFC allows for private data
+
+	// Initialize the adaptation field length including private data
+	packet[4] = 20 // Set an adaptation field length that includes space for private data
+
+	privateData := []byte{0x01, 0x02, 0x03, 0x04}
+	packet.SetTransportPrivateData(privateData)
+	retrievedData := packet.GetTransportPrivateData()
+
+	assert.Equal(t, privateData, retrievedData, "The set and retrieved transport private data do not match")
+}
+
+// TestAdaptationFieldExtensionHandling tests setting and retrieving the adaptation field extension.
+func TestAdaptationFieldExtensionHandling(t *testing.T) {
+	packet := &EncodedPacket{}
+	packet[0] = 0x47
+	packet.SetAFC(0x03) // Ensure AFC allows for extensions
+
+	// Initialize the adaptation field length including an extension
+	packet[4] = 20 // Set an adaptation field length that includes space for an extension
+	packet[22] = 5 // Position for extension length
+
+	adaptationFieldExtension := []byte{0xAA, 0xBB, 0xCC}
+	packet.SetAdaptationFieldExtension(adaptationFieldExtension)
+	retrievedExtension := packet.GetAdaptationFieldExtension()
+
+	assert.Equal(t, adaptationFieldExtension, retrievedExtension, "The set and retrieved adaptation field extension do not match")
 }
 
 // TestCalculateAdaptationFieldLength tests the function to calculate the adaptation field length.

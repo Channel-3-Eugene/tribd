@@ -16,8 +16,12 @@ type DWRR[T any] struct {
 // `count` specifies the number of queues.
 // `maxTake` is the maximum number of items that can be processed from each queue per operation cycle.
 func NewDWRR[T any](count uint, maxTake uint) *DWRR[T] {
+	quantums := make([]uint, count)
+	for i := range quantums {
+		quantums[i] = 1
+	}
 	return &DWRR[T]{
-		quantums: make([]uint, count),
+		quantums: quantums,
 		queues:   make([][]T, count),
 		maxTake:  maxTake,
 	}
@@ -118,7 +122,15 @@ func (dwrr *DWRR[T]) Do() [][]T {
 			split = dwrr.maxTake
 		}
 
-		take[i], dwrr.queues[i] = queue[:split], queue[split:]
+		// Pre-allocate memory for take[i] slice
+		take[i] = make([]T, split)
+		copy(take[i], queue[:split])
+
+		// Reuse queue slice by copying the remaining elements
+		copy(queue, queue[split:])
+
+		// Trim queue slice
+		dwrr.queues[i] = queue[:qlen-split]
 
 		dwrr.quantums[i] = qlen - split
 	}

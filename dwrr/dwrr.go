@@ -103,6 +103,7 @@ func (dwrr *DWRR[T]) Do() [][]T {
 
 	for i, queue := range dwrr.queues {
 		if len(queue) == 0 {
+			dwrr.quantums[i] = 1
 			continue
 		}
 
@@ -118,6 +119,7 @@ func (dwrr *DWRR[T]) Do() [][]T {
 		}
 
 		take[i], dwrr.queues[i] = queue[:split], queue[split:]
+
 		dwrr.quantums[i] = qlen - split
 	}
 

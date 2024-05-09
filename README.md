@@ -51,7 +51,7 @@ graph LR
         Collision --> |Yes| Collided
         Collided[Rewrite Prog #] --> UpdatePAT
         UpdatePAT --> LUT[Update LUT]
-        UpdatePAT --> PMTmap
+        UpdatePAT --> PMTmap[Update PMT Map]
         
         PAT_PMT --> |PMT| Drop([Drop])
 

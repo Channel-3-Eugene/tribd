@@ -50,9 +50,10 @@ graph LR
         Collision{Prog #\nCollision?} --> |No| UpdatePAT[Update PAT Map]
         Collision --> |Yes| Collided
         Collided[Rewrite Prog #] --> UpdatePAT
+        UpdatePAT --> LUT[Update LUT]
+        UpdatePAT --> PMTmap
         
-        PAT_PMT --> |PMT| LUT
-        LUT[Update LUT] --> PMT_MAP[Update PMT Map]
+        PAT_PMT --> |PMT| Drop([Drop])
 
         Clock[Ticker] --> Send?{Send PAT?}
         Send? --> |No| End([Done])

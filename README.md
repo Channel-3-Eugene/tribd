@@ -16,7 +16,7 @@ graph LR
         Reader --> |Packets| Queue{{DWRR Queue}} --> |Packets| MainBuffer
 
         MainBuffer --> |Packet| Writer{{Writer Services 1..N}}
-        PLL{{PLL}} <--> Writer{{FIFO Buffer}}
+        PLL{{PLL}} <--> Writer
     end
 
     Writer -->|Packets| Output_FD1(UDP / FD)

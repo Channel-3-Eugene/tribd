@@ -71,9 +71,9 @@ graph LR
         ReaderN{{Reader Service N}} --> QN
 
         subgraph Queue
-            Q1{Reader Queue 1} --> DWRR[DWRR Puller]
-            Q2{Reader Queue 3} --> DWRR[DWRR Puller]
-            QN{Reader Queue N} --> DWRR[DWRR Puller]
+            Q1[Reader Queue 1] --> DWRR[DWRR Puller]
+            Q2[Reader Queue 3] --> DWRR[DWRR Puller]
+            QN[Reader Queue N] --> DWRR[DWRR Puller]
 
         end
         

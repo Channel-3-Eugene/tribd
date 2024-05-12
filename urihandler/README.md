@@ -24,7 +24,9 @@ import "github.com/Channel-3-Eugene/tribd/urihandler"
 
 The FileHandler within the uriHandler package is designed to handle various file operations in a unified and efficient manner. It supports reading from and writing to different types of file-like endpoints, which makes it highly versatile for applications that require handling standard files, named pipes (FIFOs), and potentially other special file types.
 
-- Standard File Operations: The handler can open, read from, and write to standard files stored on disk. This is useful for applications that need to process or generate data stored in a file system.
+- Standard File Operations: The handler can open, read from, and write to plain files stored on disk. This is useful for applications that need to process or generate data stored in a file system.
+- Standard Streams: The handler will open, read from, and write to standard streams such as stdin, stdout, and numbered file descriptors beyond stderr.
+- Unix Domain Sockets: The URI handler can create, read from, write to, and destroy Unix domain sockets (also called Interprocess Communication sockets.)
 - Named Pipes (FIFOs): It offers support for named pipes, which allows for inter-process communication using file-like interfaces. This is particularly beneficial in scenarios where processes need to exchange data in real-time without the overhead of network communication.
 - Flexible Data Streaming: The handler is capable of continuous data reading and writing, making it suitable for streaming applications. Data is handled through channels, allowing for smooth integration with concurrent Go routines and operations.
 - Configurable Timeouts: Users can specify read and write timeouts, providing control over blocking operations. This feature is critical for ensuring responsiveness in systems where timely data processing is essential.

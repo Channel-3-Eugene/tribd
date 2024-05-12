@@ -1,3 +1,4 @@
+// Package mpegts implements functions to parse and manipulate MPEG-TS packets.
 package mpegts
 
 import (
@@ -5,41 +6,7 @@ import (
 	"errors"
 )
 
-// EncodedPacket represents a raw MPEG-TS packet.
-type EncodedPacket [188]byte
-
-// Adaptations represents various adaptation field parameters in an MPEG-TS packet.
-type Adaptations struct {
-	PCR                      uint64 // Program Clock Reference (PCR)
-	DTS                      uint64 // Decode Time Stamp (DTS)
-	DiscontinuityIndicator   uint8  // Discontinuity Indicator
-	TransportPrivateData     []byte // Transport Private Data
-	AdaptationFieldExtension []byte // Adaptation Field Extension
-	UnusedData               []byte // Carried forward unused data
-}
-
-// DecodedPacket represents the decoded headers of an MPEG-TS packet.
-type DecodedPacket struct {
-	SyncByte          byte        // Sync byte indicating the start of the packet
-	TransportError    bool        // Transport Error Indicator (TEI)
-	PayloadUnitStart  bool        // Payload Unit Start Indicator (PUSI)
-	TransportPriority bool        // Transport Priority
-	PID               uint16      // Packet Identifier (PID)
-	ScramblingControl uint8       // Transport Scrambling Control
-	Adaptation        Adaptations // Adaptation field data
-	ContinuityCounter uint8       // Continuity Counter
-}
-
-// Packet represents an MPEG-TS packet along with its headers, adaptations, payload, and error status.
-type Packet struct {
-	Encoded     EncodedPacket  // Raw packet
-	Decoded     *DecodedPacket // Headers
-	Adaptations *Adaptations   // Adaptation Controls
-	Payload     []byte         // TS payload
-	Error       error          // Error, or nil
-}
-
-// Error constants
+// Error constants define common errors encountered during MPEG-TS parsing.
 var (
 	ErrInvalidSyncByte         = errors.New("mpegts: invalid sync byte")
 	ErrInvalidPacketSize       = errors.New("mpegts: invalid packet size")
@@ -55,152 +22,295 @@ var (
 	ErrUnsupportedStream       = errors.New("mpegts: unsupported stream type")
 )
 
-// NewPacket creates a new Packet instance from the given encoded packet.
-func NewPacket(encodedPacket EncodedPacket) (*Packet, error) {
-	if encodedPacket[0] != 0x47 {
-		return nil, ErrInvalidSyncByte
+// EncodedPacket represents a raw MPEG-TS packet.
+type EncodedPacket [188]byte
+
+// EncodedPackets represents a collection of raw MPEG-TS packets.
+type EncodedPackets []*EncodedPacket
+
+// NewMPEGTSPacket creates a new MPEG-TS packet from a 188-byte array.
+// It validates the packet to ensure it starts with the correct sync byte (0x47).
+func NewMPEGTSPacket(data [188]byte) (*EncodedPacket, error) {
+	if data[0] != 0x47 {
+		return nil, ErrInvalidSyncByte // Ensure sync byte is correct
 	}
-
-	if len(encodedPacket) != 188 {
-		return nil, ErrInvalidPacketSize
-	}
-
-	adaptationFieldLength := int((encodedPacket[4] & 0x03) + 1)
-	payloadStart := 4 + adaptationFieldLength
-
-	packet := &Packet{
-		Encoded: encodedPacket,
-		Decoded: &DecodedPacket{
-			SyncByte:          encodedPacket[0],
-			TransportError:    encodedPacket[1]&0x80 != 0,
-			PayloadUnitStart:  encodedPacket[1]&0x40 != 0,
-			TransportPriority: encodedPacket[1]&0x20 != 0,
-			PID:               binary.BigEndian.Uint16(encodedPacket[1:]) & 0x1FFF,
-			ScramblingControl: (encodedPacket[3] >> 6) & 0x03,
-			ContinuityCounter: encodedPacket[3] & 0x0F,
-		},
-	}
-
-	// Extract adaptation field
-	if adaptationFieldLength > 0 {
-		adaptations, err := NewAdaptations(encodedPacket[4:payloadStart])
-		if err != nil {
-			return nil, err
-		}
-		packet.Adaptations = adaptations
-	}
-
-	// Extract payload
-	packet.Payload = encodedPacket[payloadStart:]
-
-	return packet, nil
+	packet := EncodedPacket(data) // Directly use the data as EncodedPacket
+	return &packet, nil
 }
 
-// NewAdaptations decodes the adaptation field from a byte slice
-func NewAdaptations(data []byte) (*Adaptations, error) {
-	if len(data) < 1 {
-		return nil, ErrInvalidAdaptationsField
-	}
-
-	adaptations := &Adaptations{
-		PCR:                      0, // Placeholder, update with actual PCR value if present
-		DTS:                      0, // Placeholder, update with actual DTS value if present
-		DiscontinuityIndicator:   data[0] & 0x80 >> 7,
-		TransportPrivateData:     nil, // Placeholder, update with actual data if present
-		AdaptationFieldExtension: nil, // Placeholder, update with actual data if present
-		UnusedData:               nil, // Placeholder, update with remaining data
-	}
-
-	// Process the adaptation field data if it's present
-	if len(data) > 1 {
-		// Process PCR and DTS values if present
-		if (data[0] & 0x10) != 0 {
-			if len(data) < 10 {
-				return nil, ErrInvalidAdaptationsField
-			}
-			adaptations.PCR = binary.BigEndian.Uint64(data[1:9])
-			data = data[9:]
-		}
-		if (data[0] & 0x20) != 0 {
-			if len(data) < 5 {
-				return nil, ErrInvalidAdaptationsField
-			}
-			adaptations.DTS = binary.BigEndian.Uint64(data[1:5])
-			data = data[5:]
-		}
-
-		// Handle Transport Private Data if present
-		if (data[0] & 0x40) != 0 {
-			// Extract Transport Private Data
-			// The first byte indicates the length of the Transport Private Data
-			// Adjust as per the specific format of Transport Private Data
-			length := int(data[1])
-			if len(data) < 2+length {
-				return nil, ErrInvalidAdaptationsField
-			}
-			adaptations.TransportPrivateData = data[2 : 2+length]
-			data = data[2+length:]
-		}
-
-		// Handle Adaptation Field Extension if present
-		if (data[0] & 0x01) != 0 {
-			// Extract Adaptation Field Extension
-			// Implement the decoding logic for Adaptation Field Extension
-			// Adjust as per the specific format of Adaptation Field Extension
-			// Placeholder for demonstration
-			adaptations.AdaptationFieldExtension = data[1:]
-		}
-	}
-
-	// Any remaining data is considered unused and carried forward
-	adaptations.UnusedData = data
-
-	return adaptations, nil
+// IsMPEGTS checks if the packet begins with the MPEG-TS sync byte.
+func (ep *EncodedPacket) IsMPEGTS() bool {
+	return ep[0] == 0x47
 }
 
-// EncodeMultiplexingAdaptationField encodes the adaptation field into a byte slice
-func (a *Adaptations) Encode() ([]byte, error) {
-	// Placeholder implementation for encoding adaptations
-	// Implement the logic to encode adaptations into a byte slice
-	// Adjust as per the specific requirements and format of adaptations
-
-	// This is just a placeholder returning an empty byte slice
-	return []byte{}, nil
+// GetSyncByte returns the sync byte of the MPEG-TS packet.
+func (ep *EncodedPacket) GetSyncByte() byte {
+	return ep[0]
 }
 
-// calculateAdaptationFieldLength calculates the length of the adaptation field based on whether it is present.
-func calculateAdaptationFieldLength(packet EncodedPacket) int {
-	adaptationFieldControl := packet[3] >> 4 & 0x03
-	if adaptationFieldControl == 0x02 || adaptationFieldControl == 0x03 {
-		// Adaptation field is present
-		println("Adaptation field is present", packet[4:4+int(packet[4])+1], int(packet[4])+1)
-		return int(packet[4]) + 1
+// GetTEI returns the Transport Error Indicator (TEI) flag of the packet.
+func (ep *EncodedPacket) GetTEI() bool {
+	return ep[1]&0x80 != 0
+}
+
+// SetTEI sets the Transport Error Indicator (TEI) flag of the packet.
+func (ep *EncodedPacket) SetTEI() {
+	ep[1] |= 0x80
+}
+
+// ClearTEI clears the Transport Error Indicator (TEI) flag of the packet.
+func (ep *EncodedPacket) ClearTEI() {
+	ep[1] &= 0x7F
+}
+
+// GetPUSI returns the Payload Unit Start Indicator (PUSI) flag of the packet.
+func (ep *EncodedPacket) GetPUSI() bool {
+	return ep[1]&0x40 != 0
+}
+
+// SetPUSI sets the Payload Unit Start Indicator (PUSI) flag of the packet.
+func (ep *EncodedPacket) SetPUSI() {
+	ep[1] |= 0x40
+}
+
+// ClearPUSI clears the Payload Unit Start Indicator (PUSI) flag of the packet.
+func (ep *EncodedPacket) ClearPUSI() {
+	ep[1] &= 0xBF
+}
+
+// GetPID returns the Packet Identifier (PID) of the packet.
+func (ep *EncodedPacket) GetPID() uint16 {
+	return binary.BigEndian.Uint16(ep[1:3]) & 0x1FFF
+}
+
+// SetPID sets the Packet Identifier (PID) of the packet.
+func (ep *EncodedPacket) SetPID(pid uint16) {
+	if pid > 0x1FFF { // Ensure the PID does not exceed 13 bits
+		// Handle error or assign a default value; depends on your use case
+		pid = 0x1FFF
 	}
-	println("Adaptation field is not present", packet[3]>>4&0x03, packet[4])
+
+	// Clear the existing PID bits (13 bits spanning bytes 1 and 2)
+	ep[1] &= 0xE0 // Preserve the upper 3 bits (PUSI and TP) of the first byte
+	ep[2] = 0x00  // Clear the second byte (will be fully set below)
+
+	// Set the new PID
+	ep[1] |= byte(pid >> 8)   // Set the upper 5 bits of the PID
+	ep[2] |= byte(pid & 0xFF) // Set the lower 8 bits of the PID
+}
+
+// IsNullPacket checks if the packet is a null packet (PID 0x1FFF).
+func (ep *EncodedPacket) IsNullPacket() bool {
+	pid := int(ep[1]&0x1F)<<8 + int(ep[2])
+	return pid == 0x1FFF
+}
+
+// GetTSC returns the Transport Scrambling Control (TSC) field of the packet.
+func (ep *EncodedPacket) GetTSC() uint8 {
+	return (ep[3] >> 6) & 0x03
+}
+
+// SetTSC sets the Transport Scrambling Control (TSC) field of the packet.
+func (ep *EncodedPacket) SetTSC(tsc uint8) {
+	ep[3] = (ep[3] & 0x3F) | (tsc << 6)
+}
+
+// GetAFC returns the Adaptation Field Control (AFC) field of the packet.
+func (ep *EncodedPacket) GetAFC() uint8 {
+	return (ep[3] >> 4) & 0x03
+}
+
+// SetAFC sets the Adaptation Field Control (AFC) field of the packet.
+func (ep *EncodedPacket) SetAFC(afc uint8) {
+	currentAFC := ep.GetAFC()
+	ep[3] = (ep[3] & 0xCF) | (afc << 4)
+
+	// If the new AFC indicates no adaptation field, clear the adaptation field length and data.
+	if afc == 0x00 || afc == 0x10 {
+		if currentAFC == 0x02 || currentAFC == 0x03 {
+			// Zero the length of the adaptation field
+			ep[4] = 0
+			// Optionally clear the rest of the adaptation field data to maintain packet integrity
+			// Here, we fill the adaptation field space with 0xFF (commonly used stuffing byte)
+			for i := 5; i < 188; i++ {
+				ep[i] = 0xFF
+			}
+		}
+	}
+}
+
+// GetCC returns the Continuity Counter (CC) of the packet.
+func (ep *EncodedPacket) GetCC() uint8 {
+	return ep[3] & 0x0F
+}
+
+// SetCC sets the Continuity Counter (CC) of the packet.
+func (ep *EncodedPacket) SetCC(cc uint8) {
+	ep[3] = (ep[3] & 0xF0) | (cc & 0x0F)
+}
+
+// GetPayload returns the payload of the packet.
+func (ep *EncodedPacket) GetPayload() []byte {
+	if ep.GetAFC() == 0x01 {
+		length := int(ep[4])
+		return ep[5 : 5+length]
+	}
+	return ep[4:]
+}
+
+// SetPayload sets the payload of the packet.
+func (ep *EncodedPacket) SetPayload(payload []byte) {
+	if ep.GetAFC() == 0x01 {
+		ep[4] = byte(len(payload))
+		copy(ep[5:], payload)
+	} else {
+		copy(ep[4:], payload)
+	}
+}
+
+// GetAdaptationField returns the adaptation field of the packet.
+func (ep *EncodedPacket) GetAdaptationField() []byte {
+	if ep.GetAFC() == 0x02 || ep.GetAFC() == 0x03 {
+		length := int(ep[4])
+		return ep[5 : 5+length]
+	}
+	return nil
+}
+
+// SetAdaptationField sets the adaptation field of the packet.
+func (ep *EncodedPacket) SetAdaptationField(af []byte) {
+	if ep.GetAFC() == 0x02 || ep.GetAFC() == 0x03 {
+		ep[4] = byte(len(af))
+		copy(ep[5:], af)
+	}
+}
+
+// GetOPCR returns the Original Program Clock Reference (OPCR) value from the adaptation field.
+func (ep *EncodedPacket) GetOPCR() uint64 {
+	if ep.GetAFC() == 0x03 {
+		return binary.BigEndian.Uint64(ep[13:21]) & 0x1FFFFFFFFFFFF
+	}
 	return 0
 }
 
-// SetPCR sets the PCR value in the adaptation field of the MPEG-TS packet header.
-// PCR frequency is the frequency of the Program Clock Reference in Hz.
-func SetPCR(packet *EncodedPacket, pcr uint64, pcrFrequency uint64) {
-	println("PCR called", packet[3]>>4&0x03, packet[4], pcr, pcrFrequency, calculateAdaptationFieldLength(*packet))
-	// PCR base is 33 bits, divided into two 33-bit fields in the MPEG-TS header
-	// PCR extension is 9 bits
-	// The PCR is divided by the PCR frequency to get the value in PCR units (in Hz)
-	pcrBase := pcr / pcrFrequency
-	pcrExt := pcr % pcrFrequency
-	adaptationFieldStart := 4
+// SetOPCR sets the Original Program Clock Reference (OPCR) value in the adaptation field.
+func (ep *EncodedPacket) SetOPCR(opcr uint64) {
+	if ep.GetAFC() == 0x03 {
+		binary.BigEndian.PutUint64(ep[13:21], opcr)
+	}
+}
 
-	// Set adaptation field control to indicate PCR presence
-	packet[adaptationFieldStart] |= 0x10 // Set PCR flag
+// GetSpliceCountdown returns the Splice Countdown field from the adaptation field.
+func (ep *EncodedPacket) GetSpliceCountdown() uint8 {
+	if ep.GetAFC() == 0x03 {
+		return ep[21]
+	}
+	return 0
+}
 
-	// Set PCR fields in adaptation field
-	packet[adaptationFieldStart+1] = byte(pcrBase >> 25)
-	packet[adaptationFieldStart+2] = byte(pcrBase >> 17)
-	packet[adaptationFieldStart+3] = byte(pcrBase >> 9)
-	packet[adaptationFieldStart+4] = byte(pcrBase >> 1)
-	packet[adaptationFieldStart+5] = byte(pcrBase<<7 | (pcrExt>>8)&0x7F)
-	packet[adaptationFieldStart+6] = byte(pcrExt & 0xFF)
+// SetSpliceCountdown sets the Splice Countdown field in the adaptation field.
+func (ep *EncodedPacket) SetSpliceCountdown(sc uint8) {
+	if ep.GetAFC() == 0x03 {
+		ep[21] = sc
+	}
+}
 
-	println("PCR complete", packet[3]>>4&0x03, packet[4], calculateAdaptationFieldLength(*packet))
+// GetTransportPrivateData returns the Transport Private Data from the adaptation field.
+func (ep *EncodedPacket) GetTransportPrivateData() []byte {
+	if ep.GetAFC() == 0x03 {
+		length := ep[22]          // Get the length of the transport private data
+		return ep[23 : 23+length] // Correct slicing to exclude the length byte
+	}
+	return nil
+}
+
+// SetTransportPrivateData sets the Transport Private Data in the adaptation field.
+func (ep *EncodedPacket) SetTransportPrivateData(tpd []byte) {
+	if ep.GetAFC() == 0x03 {
+		ep[22] = byte(len(tpd))
+		copy(ep[23:], tpd)
+	}
+}
+
+// GetAdaptationFieldExtension returns the Adaptation Field Extension from the adaptation field.
+func (ep *EncodedPacket) GetAdaptationFieldExtension() []byte {
+	if ep.GetAFC() == 0x03 {
+		start := 22 + ep[22]                // Calculate the starting position correctly
+		length := ep[start]                 // Get the length of the extension from the start position
+		return ep[start+1 : start+1+length] // Correct slicing to exclude the length byte
+	}
+	return nil
+}
+
+// SetAdaptationFieldExtension sets the Adaptation Field Extension in the adaptation field.
+func (ep *EncodedPacket) SetAdaptationFieldExtension(afe []byte) {
+	if ep.GetAFC() == 0x03 {
+		ep[22+ep[22]] = byte(len(afe))
+		copy(ep[23+ep[22]:], afe)
+	}
+}
+
+// calculateAdaptationFieldLength calculates the length of the adaptation field based on whether it is present.
+func calculateAdaptationFieldLength(packet *EncodedPacket) int {
+	adaptationFieldControl := packet[3] >> 4 & 0x03
+	if adaptationFieldControl == 0x02 || adaptationFieldControl == 0x03 {
+		// Adaptation field is present
+		return int(packet[4]) + 1
+	}
+	return 0
+}
+
+// GetPCR returns the Program Clock Reference (PCR) value from the adaptation field.
+// We are assuming a standard 27 MHz clock frequency for the PCR.
+func (ep *EncodedPacket) SetPCR(pcr uint64) {
+	pcrBase := pcr / 300      // Divide by 300 to convert to base unit
+	pcrExtension := pcr % 300 // Modulus 300 to find the extension
+
+	afc := ep.GetAFC()
+	if afc != 0x02 && afc != 0x03 {
+		ep.SetAFC(0x03) // Ensure the adaptation field is set to contain a PCR
+	}
+
+	// Ensure adaptation field length is enough to hold PCR (minimum 7 bytes)
+	if ep[4] < 7 {
+		ep[4] = 7
+		for i := 5; i < 12; i++ {
+			ep[i] = 0
+		}
+	}
+
+	ep[5] |= 0x10 // Set the PCR flag
+
+	// Set PCR base and extension
+	ep[6] = byte(pcrBase >> 25)
+	ep[7] = byte(pcrBase >> 17)
+	ep[8] = byte(pcrBase >> 9)
+	ep[9] = byte(pcrBase >> 1)
+	ep[10] = (byte(pcrBase<<7) & 0x80) | (byte(pcrExtension>>8) & 0x01)
+	ep[11] = byte(pcrExtension & 0xFF)
+}
+
+// GetPCR returns the Program Clock Reference (PCR) value from the adaptation field.
+func (ep *EncodedPacket) GetPCR() uint64 {
+	if (ep.GetAFC() == 0x02 || ep.GetAFC() == 0x03) && (ep[5]&0x10 == 0x10) {
+		pcrBase := uint64(ep[6])<<25 | uint64(ep[7])<<17 | uint64(ep[8])<<9 | uint64(ep[9])<<1 | uint64(ep[10]>>7)
+		pcrExtension := uint64(ep[10]&0x01)<<8 | uint64(ep[11])
+		return pcrBase*300 + pcrExtension
+	}
+	return 0
+}
+
+// ClearPCR removes the PCR data from the packet if it exists.
+func (ep *EncodedPacket) ClearPCR() {
+	afc := ep.GetAFC()
+	if afc == 0x02 || afc == 0x03 { // Check if the adaptation field is present
+		afLength := int(ep[4])
+		if afLength > 0 && (ep[5]&0x10) != 0 { // Check if PCR flag is set
+			ep[5] &= 0xEF // Clear the PCR flag
+			// Zero out PCR fields (6 bytes following the adaptation field length)
+			for i := 6; i <= 11; i++ {
+				ep[5+i] = 0
+			}
+		}
+	}
 }

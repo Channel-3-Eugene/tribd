@@ -1,101 +1,149 @@
 package uriHandler
 
 import (
-	"io"
-	"net"
-	"strings"
-	"sync"
+	"crypto/rand"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func tryBindWithRetry(address string, maxRetries int) (net.Listener, error) {
-	var listener net.Listener
-	var err error
-	for i := 0; i < maxRetries; i++ {
-		listener, err = net.Listen("tcp", address)
-		if err == nil {
-			return listener, nil
+func TestNewTCPHandler(t *testing.T) {
+	dataChan := make(chan []byte)
+	handler := NewTCPHandler(":0", 0, 0, Server, Reader, dataChan)
+	assert.Equal(t, ":0", handler.address)
+	assert.Equal(t, 0*time.Second, handler.readDeadline)
+	assert.Equal(t, 0*time.Second, handler.writeDeadline)
+	assert.Equal(t, Server, handler.mode)
+	assert.Equal(t, Reader, handler.role)
+	assert.Equal(t, dataChan, handler.dataChan)
+	assert.NotNil(t, handler.connections)
+}
+
+func TestServerWriterClientReader(t *testing.T) {
+	writerChan := make(chan []byte)
+	readerChan := make(chan []byte)
+
+	serverWriter := NewTCPHandler(":0", 0, 0, Server, Writer, writerChan)
+	err := serverWriter.Open()
+	assert.Nil(t, err)
+
+	serverWriterAddr := serverWriter.Status().Address
+
+	clientReader := NewTCPHandler(serverWriterAddr, 0, 0, Client, Reader, readerChan)
+	err = clientReader.Open()
+	assert.Nil(t, err)
+
+	t.Run("TestNewTCPHandler", func(t *testing.T) {
+		status := serverWriter.Status()
+		assert.Equal(t, serverWriterAddr, status.Address)
+		assert.Equal(t, Server, status.Mode)
+		assert.Equal(t, Writer, status.Role)
+	})
+
+	t.Run("TestWriteData", func(t *testing.T) {
+		randBytes := make([]byte, 188)
+		_, _ = rand.Read(randBytes)
+		writerChan <- randBytes
+
+		select {
+		case data := <-readerChan:
+			assert.Equal(t, randBytes, data)
+		case <-time.After(5 * time.Millisecond):
+			assert.Fail(t, "Timeout waiting for data")
 		}
-		if !strings.Contains(err.Error(), "address already in use") {
-			return nil, err
+
+		status := serverWriter.Status()
+		assert.Equal(t, 1, len(status.Connections))
+	})
+}
+
+func TestServerReaderClientWriter(t *testing.T) {
+	writerChan := make(chan []byte)
+	readerChan := make(chan []byte)
+
+	serverReader := NewTCPHandler(":0", 0, 0, Server, Reader, readerChan)
+	err := serverReader.Open()
+	assert.Nil(t, err)
+
+	serverReaderAddr := serverReader.Status().Address
+
+	clientWriter := NewTCPHandler(serverReaderAddr, 0, 0, Client, Writer, writerChan)
+	err = clientWriter.Open()
+	assert.Nil(t, err)
+
+	clientWriterAddr := clientWriter.Status().Address
+
+	t.Run("TestNewTCPHandler", func(t *testing.T) {
+		status := serverReader.Status()
+		assert.Equal(t, Server, status.Mode)
+		assert.Equal(t, Reader, status.Role)
+
+		status = clientWriter.Status()
+		assert.Equal(t, serverReaderAddr, status.Address)
+		assert.Equal(t, Client, status.Mode)
+		assert.Equal(t, Writer, status.Role)
+	})
+
+	t.Run("TestWriteData", func(t *testing.T) {
+		randBytes := make([]byte, 188)
+		_, _ = rand.Read(randBytes)
+		writerChan <- randBytes
+
+		select {
+		case data := <-readerChan:
+			assert.Equal(t, randBytes, data)
+		case <-time.After(5 * time.Millisecond):
+			assert.Fail(t, "Timeout waiting for data")
 		}
-		time.Sleep(time.Duration(i+1) * 100 * time.Millisecond) // Exponential back-off could be considered
-	}
-	return nil, err
+
+		assert.Equal(t, 1, len(serverReader.Status().Connections))
+		assert.Equal(t, clientWriter.Status().Connections[clientWriterAddr], clientWriter.Status().Connections[clientWriterAddr])
+
+		assert.Equal(t, 1, len(clientWriter.Status().Connections))
+		assert.Equal(t, serverReader.Status().Connections[serverReaderAddr], clientWriter.Status().Connections[clientWriterAddr])
+	})
 }
 
-func startEchoServer(t *testing.T) (string, func()) {
-	listener, err := tryBindWithRetry("localhost:0", 5)
-	assert.NoError(t, err, "Failed to start echo server after retries")
+func TestServerWriterClientReaderTCP(t *testing.T) {
+	writerChan := make(chan []byte, 1)
+	readerChan := make(chan []byte, 1)
 
-	var wg sync.WaitGroup
+	serverWriter := NewTCPHandler(":0", 0, 0, Server, Writer, writerChan)
+	err := serverWriter.Open()
+	assert.Nil(t, err)
 
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				break // Exit the loop on server close
-			}
-			wg.Add(1)
-			go func(c net.Conn) {
-				defer wg.Done()
-				defer c.Close()
-				io.Copy(c, c) // Simple echo server
-			}(conn)
+	serverWriterAddr := serverWriter.Status().Address
+
+	clientReader := NewTCPHandler(serverWriterAddr, 0, 0, Client, Reader, readerChan)
+	err = clientReader.Open()
+	assert.Nil(t, err)
+
+	t.Run("TestNewTCPHandler", func(t *testing.T) {
+		serverStatus := serverWriter.Status()
+		assert.Equal(t, Server, serverStatus.Mode)
+		assert.Equal(t, Writer, serverStatus.Role)
+		assert.Equal(t, serverWriterAddr, serverStatus.Address)
+
+		clientStatus := clientReader.Status()
+		assert.Equal(t, Client, clientStatus.Mode)
+		assert.Equal(t, Reader, clientStatus.Role)
+		assert.Equal(t, serverWriterAddr, clientStatus.Address)
+	})
+
+	t.Run("TestWriteData", func(t *testing.T) {
+		randBytes := make([]byte, 188)
+		_, _ = rand.Read(randBytes)
+		writerChan <- randBytes
+
+		select {
+		case data := <-readerChan:
+			assert.Equal(t, randBytes, data)
+		case <-time.After(5 * time.Second):
+			assert.Fail(t, "Timeout waiting for data")
 		}
-	}()
+	})
 
-	return listener.Addr().String(), func() {
-		listener.Close()
-		wg.Wait() // Ensure all connections are closed
-	}
-}
-
-// Helper function to start the TCPHandler in server mode.
-func startServerHandler(t *testing.T, address string, dataChan chan []byte) *TCPHandler {
-	handler := NewTCPHandler(address, 1*time.Second, 1*time.Second, Server, Reader, dataChan)
-	assert.NoError(t, handler.Open(), "Failed to open server handler")
-	return handler
-}
-
-// TestTCPHandlerServerMode verifies the server functionality of TCPHandler to ensure it can receive data.
-func TestTCPHandlerServerMode(t *testing.T) {
-	// Setup a channel to capture data received by the server.
-	dataChan := make(chan []byte, 1)
-	defer close(dataChan)
-
-	// Create server handler.
-	serverAddr, cleanupServer := startEchoServer(t) // Ensure this function starts a simple echo server correctly
-	defer cleanupServer()
-
-	handler := startServerHandler(t, serverAddr, dataChan)
-	defer handler.Close()
-
-	// Start a client to send data to the server.
-	conn, err := net.Dial("tcp", serverAddr)
-	assert.NoError(t, err, "Failed to connect to server")
-	defer conn.Close()
-
-	// Send data to the server.
-	sentMessage := "hello from client"
-	_, err = conn.Write([]byte(sentMessage))
-	assert.NoError(t, err, "Failed to send data to server")
-
-	// Read and verify the data received by the server.
-	receivedMessage := <-dataChan
-	assert.Equal(t, sentMessage, string(receivedMessage), "Mismatch in data received by server")
-}
-
-func TestTCPHandlerClientMode(t *testing.T) {
-	serverAddr, cleanupServer := startEchoServer(t)
-	defer cleanupServer()
-
-	handler := NewTCPHandler(serverAddr, 1*time.Second, 1*time.Second, Client, Writer, make(chan []byte, 1))
-	assert.NoError(t, handler.Open(), "Failed to open TCP handler")
-	defer handler.Close()
-
-	// Additional testing logic to send/receive data to/from handler
+	assert.Nil(t, serverWriter.Close())
+	assert.Nil(t, clientReader.Close())
 }

@@ -6,6 +6,13 @@ import (
 	"time"
 )
 
+type TCPStatus struct {
+	Mode        Mode
+	Role        Role
+	Address     string
+	Connections map[string]string
+}
+
 type TCPHandler struct {
 	address       string
 	readDeadline  time.Duration
@@ -16,10 +23,12 @@ type TCPHandler struct {
 	dataChan      chan []byte
 	connections   map[net.Conn]struct{}
 	mu            sync.Mutex
+
+	status TCPStatus
 }
 
 func NewTCPHandler(address string, readDeadline, writeDeadline time.Duration, mode Mode, role Role, dataChan chan []byte) *TCPHandler {
-	return &TCPHandler{
+	h := &TCPHandler{
 		address:       address,
 		readDeadline:  readDeadline,
 		writeDeadline: writeDeadline,
@@ -28,6 +37,15 @@ func NewTCPHandler(address string, readDeadline, writeDeadline time.Duration, mo
 		dataChan:      dataChan,
 		connections:   make(map[net.Conn]struct{}),
 	}
+
+	h.status = TCPStatus{
+		Address:     address,
+		Mode:        mode,
+		Role:        role,
+		Connections: map[string]string{},
+	}
+
+	return h
 }
 
 func (h *TCPHandler) Open() error {
@@ -39,14 +57,27 @@ func (h *TCPHandler) Open() error {
 	return nil
 }
 
+func (h *TCPHandler) Status() TCPStatus {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for c := range h.connections {
+		h.status.Connections[c.LocalAddr().String()] = c.RemoteAddr().String()
+	}
+
+	return h.status
+}
+
 func (h *TCPHandler) connectClient() error {
 	conn, err := net.Dial("tcp", h.address)
 	if err != nil {
 		return err
 	}
+
 	h.mu.Lock()
 	h.connections[conn] = struct{}{}
 	h.mu.Unlock()
+
 	go h.manageStream(conn)
 	return nil
 }
@@ -57,6 +88,7 @@ func (h *TCPHandler) startServer() error {
 		return err
 	}
 	h.listener = ln
+	h.status.Address = ln.Addr().String()
 	go h.acceptClients()
 	return nil
 }

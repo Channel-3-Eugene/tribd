@@ -6,6 +6,12 @@ import (
 	"time"
 )
 
+type UDPStatus struct {
+	Mode    Mode
+	Role    Role
+	Address string
+}
+
 type UDPHandler struct {
 	address        string
 	conn           *net.UDPConn
@@ -14,9 +20,11 @@ type UDPHandler struct {
 	mode           Mode // Only 'peer' mode as UDP is inherently peer-to-peer
 	role           Role
 	dataChan       chan []byte
-	allowedSources map[string]struct{} // For Reader role to filter allowed sources
-	destinations   []*net.UDPAddr      // For Writer role to define target addresses
+	allowedSources map[string]struct{}
+	destinations   map[string]*net.UDPAddr
 	mu             sync.Mutex
+
+	status UDPStatus
 }
 
 func NewUDPHandler(address string, readDeadline, writeDeadline time.Duration, role Role, dataChan chan []byte, sources, destinations []string) *UDPHandler {
@@ -28,19 +36,33 @@ func NewUDPHandler(address string, readDeadline, writeDeadline time.Duration, ro
 		role:           role,
 		dataChan:       dataChan,
 		allowedSources: make(map[string]struct{}),
-		destinations:   make([]*net.UDPAddr, len(destinations)),
+		destinations:   make(map[string]*net.UDPAddr),
 	}
 
 	for _, src := range sources {
-		handler.allowedSources[src] = struct{}{}
+		if _, err := net.ResolveUDPAddr("udp", src); err == nil {
+			handler.allowedSources[src] = struct{}{}
+		}
 	}
 
-	for i, dst := range destinations {
-		addr, _ := net.ResolveUDPAddr("udp", dst)
-		handler.destinations[i] = addr
+	for _, dst := range destinations {
+		if addr, err := net.ResolveUDPAddr("udp", dst); err == nil {
+			handler.destinations[dst] = addr
+		}
+	}
+
+	handler.status = UDPStatus{
+		Mode: Peer,
+		Role: role,
 	}
 
 	return handler
+}
+
+func (h *UDPHandler) Status() UDPStatus {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.status
 }
 
 func (h *UDPHandler) Open() error {
@@ -55,6 +77,8 @@ func (h *UDPHandler) Open() error {
 	}
 	h.conn = conn
 
+	h.status.Address = conn.LocalAddr().String()
+
 	if h.role == Writer {
 		go h.sendData()
 	} else if h.role == Reader {
@@ -63,9 +87,47 @@ func (h *UDPHandler) Open() error {
 	return nil
 }
 
+func (h *UDPHandler) AddSource(addr string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.allowedSources[addr] = struct{}{}
+	return nil
+}
+
+func (h *UDPHandler) RemoveSource(addr string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.allowedSources, addr)
+	return nil
+}
+
+func (h *UDPHandler) AddDestination(addr string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return err
+	}
+	h.destinations[addr] = udpAddr
+	return nil
+}
+
+func (h *UDPHandler) RemoveDestination(addr string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.destinations, addr)
+	return nil
+}
+
 func (h *UDPHandler) sendData() {
 	defer h.conn.Close()
+
+	if h.writeDeadline > 0 {
+		h.conn.SetWriteDeadline(time.Now().Add(h.writeDeadline))
+	}
+
 	for batch := range h.dataChan {
+
 		for _, addr := range h.destinations {
 			_, err := h.conn.WriteToUDP(batch, addr)
 			if err != nil {
@@ -77,9 +139,14 @@ func (h *UDPHandler) sendData() {
 
 func (h *UDPHandler) receiveData() {
 	defer h.conn.Close()
-	readBuffer := make([]byte, 2048)
-	for {
+
+	if h.readDeadline > 0 {
 		h.conn.SetReadDeadline(time.Now().Add(h.readDeadline))
+	}
+
+	readBuffer := make([]byte, 2048)
+
+	for {
 		n, addr, err := h.conn.ReadFromUDP(readBuffer)
 		if err != nil {
 			continue // Handle or log errors appropriately

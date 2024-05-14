@@ -11,11 +11,17 @@ const (
 	Writer Role = "writer"
 )
 
-type DataHandler interface {
+type URIHandler interface {
 	Open() error
 	Close() error
-	SendData(data []byte) error
-	ReceiveData() <-chan []byte
+	Status() interface{}
+}
+
+// Common status interface for all handlers
+type Status interface {
+	GetMode() Mode
+	GetRole() Role
+	GetAddress() string
 }
 
 // Possible IO handlers we may eventually support:

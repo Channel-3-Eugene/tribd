@@ -4,47 +4,63 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/Channel-3-Eugene/tribd/channels" // Correct import path
 )
 
+// UDPStatus represents the status of a UDPHandler, detailing its configuration and state.
 type UDPStatus struct {
-	Mode    Mode
-	Role    Role
-	Address string
+	Mode           Mode
+	Role           Role
+	Address        string
+	ReadDeadline   time.Duration
+	WriteDeadline  time.Duration
+	AllowedSources []string // List of source addresses allowed to send data
+	Destinations   []string // List of destination addresses to send data
 }
 
+// Getter methods for UDPStatus
+func (u UDPStatus) GetMode() Mode      { return u.Mode }
+func (u UDPStatus) GetRole() Role      { return u.Role }
+func (u UDPStatus) GetAddress() string { return u.Address }
+
+// UDPHandler manages UDP network communication, supporting roles as sender (writer) or receiver (reader).
 type UDPHandler struct {
 	address        string
 	conn           *net.UDPConn
 	readDeadline   time.Duration
 	writeDeadline  time.Duration
-	mode           Mode // Only 'peer' mode as UDP is inherently peer-to-peer
+	mode           Mode
 	role           Role
-	dataChan       chan []byte
-	allowedSources map[string]struct{}
-	destinations   map[string]*net.UDPAddr
-	mu             sync.Mutex
+	dataChan       *channels.PacketChan
+	allowedSources map[string]struct{}     // Set of source IPs allowed to send data to this handler
+	destinations   map[string]*net.UDPAddr // UDP addresses for sending data
+	mu             sync.RWMutex            // Mutex to protect concurrent access to handler state
 
 	status UDPStatus
 }
 
-func NewUDPHandler(address string, readDeadline, writeDeadline time.Duration, role Role, dataChan chan []byte, sources, destinations []string) *UDPHandler {
+// NewUDPHandler initializes a new UDPHandler with specified settings.
+func NewUDPHandler(address string, readDeadline, writeDeadline time.Duration, role Role, sources, destinations []string) *UDPHandler {
 	handler := &UDPHandler{
 		address:        address,
 		readDeadline:   readDeadline,
 		writeDeadline:  writeDeadline,
 		mode:           Peer,
 		role:           role,
-		dataChan:       dataChan,
+		dataChan:       channels.NewPacketChan(64 * 1024), // TODO: get this from config
 		allowedSources: make(map[string]struct{}),
 		destinations:   make(map[string]*net.UDPAddr),
 	}
 
+	// Populate allowed sources.
 	for _, src := range sources {
 		if _, err := net.ResolveUDPAddr("udp", src); err == nil {
 			handler.allowedSources[src] = struct{}{}
 		}
 	}
 
+	// Populate destinations.
 	for _, dst := range destinations {
 		if addr, err := net.ResolveUDPAddr("udp", dst); err == nil {
 			handler.destinations[dst] = addr
@@ -59,12 +75,34 @@ func NewUDPHandler(address string, readDeadline, writeDeadline time.Duration, ro
 	return handler
 }
 
+// Status returns the current status of the UDPHandler.
 func (h *UDPHandler) Status() UDPStatus {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.status
+
+	// Convert internal maps to slices for easier external consumption.
+	sources := make([]string, 0, len(h.allowedSources))
+	for src := range h.allowedSources {
+		sources = append(sources, src)
+	}
+
+	destinations := make([]string, 0, len(h.destinations))
+	for dst := range h.destinations {
+		destinations = append(destinations, dst)
+	}
+
+	return UDPStatus{
+		Mode:           h.mode,
+		Role:           h.role,
+		Address:        h.conn.LocalAddr().String(),
+		ReadDeadline:   h.readDeadline,
+		WriteDeadline:  h.writeDeadline,
+		AllowedSources: sources,
+		Destinations:   destinations,
+	}
 }
 
+// Open starts the UDPHandler, setting up a UDP connection for sending or receiving data.
 func (h *UDPHandler) Open() error {
 	udpAddr, err := net.ResolveUDPAddr("udp", h.address)
 	if err != nil {
@@ -87,6 +125,7 @@ func (h *UDPHandler) Open() error {
 	return nil
 }
 
+// Methods for managing allowed sources and destinations.
 func (h *UDPHandler) AddSource(addr string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -119,6 +158,7 @@ func (h *UDPHandler) RemoveDestination(addr string) error {
 	return nil
 }
 
+// sendData handles sending data to the configured destinations.
 func (h *UDPHandler) sendData() {
 	defer h.conn.Close()
 
@@ -126,10 +166,14 @@ func (h *UDPHandler) sendData() {
 		h.conn.SetWriteDeadline(time.Now().Add(h.writeDeadline))
 	}
 
-	for batch := range h.dataChan {
+	for {
+		data := h.dataChan.Receive()
+		if data == nil {
+			break // Channel closed
+		}
 
 		for _, addr := range h.destinations {
-			_, err := h.conn.WriteToUDP(batch, addr)
+			_, err := h.conn.WriteToUDP(data, addr)
 			if err != nil {
 				break
 			}
@@ -137,6 +181,7 @@ func (h *UDPHandler) sendData() {
 	}
 }
 
+// receiveData continues to handle data reception and uses PacketChan.
 func (h *UDPHandler) receiveData() {
 	defer h.conn.Close()
 
@@ -144,25 +189,48 @@ func (h *UDPHandler) receiveData() {
 		h.conn.SetReadDeadline(time.Now().Add(h.readDeadline))
 	}
 
-	readBuffer := make([]byte, 2048)
+	bufferPool := sync.Pool{
+		New: func() interface{} {
+			return new([]byte)
+		},
+	}
 
 	for {
-		n, addr, err := h.conn.ReadFromUDP(readBuffer)
+		rawBuffer := bufferPool.Get().(*[]byte) // Get a buffer from the pool
+		if cap(*rawBuffer) < 2048 {
+			*rawBuffer = make([]byte, 2048)
+		}
+
+		n, addr, err := h.conn.ReadFromUDP(*rawBuffer)
 		if err != nil {
-			continue // Handle or log errors appropriately
+			bufferPool.Put(rawBuffer)
+			continue
 		}
-		if _, ok := h.allowedSources[addr.IP.String()]; !ok {
-			continue // Ignore packets not from allowed sources
+
+		h.mu.RLock()
+		_, ok := h.allowedSources[addr.IP.String()]
+		h.mu.RUnlock()
+
+		if !ok {
+			bufferPool.Put(rawBuffer)
+			continue
 		}
-		h.dataChan <- readBuffer[:n]
+
+		// Send the data through the channel.
+		err = h.dataChan.Send((*rawBuffer)[:n])
+		if err != nil {
+			bufferPool.Put(rawBuffer)
+		}
 	}
 }
 
+// Close terminates the handler's operations and closes the UDP connection.
 func (h *UDPHandler) Close() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.conn != nil {
 		h.conn.Close()
 	}
+	h.dataChan.Close()
 	return nil
 }

@@ -7,6 +7,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/Channel-3-Eugene/tribd/channels" // Correct import path
 )
 
 // SocketStatus defines the status of a SocketHandler including its mode, role, and current connections.
@@ -36,21 +38,21 @@ type SocketHandler struct {
 	mode          Mode
 	role          Role
 	listener      net.Listener
-	dataChan      chan []byte
+	dataChan      *channels.PacketChan
 	connections   map[net.Conn]struct{}
 	mu            sync.Mutex
 	status        SocketStatus
 }
 
 // NewSocketHandler creates and initializes a new SocketHandler with the specified parameters.
-func NewSocketHandler(socketPath string, readDeadline, writeDeadline time.Duration, mode Mode, role Role, dataChan chan []byte) *SocketHandler {
+func NewSocketHandler(socketPath string, readDeadline, writeDeadline time.Duration, mode Mode, role Role) *SocketHandler {
 	return &SocketHandler{
 		socketPath:    socketPath,
 		readDeadline:  readDeadline,
 		writeDeadline: writeDeadline,
 		mode:          mode,
 		role:          role,
-		dataChan:      dataChan,
+		dataChan:      channels.NewPacketChan(64 * 1024), // Initialize PacketChan with a buffer size
 		connections:   make(map[net.Conn]struct{}),
 		status: SocketStatus{
 			Address:       socketPath,
@@ -78,15 +80,16 @@ func (h *SocketHandler) Status() SocketStatus {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	h.status.Connections = []string{} // Reset the list
+	connections := []string{} // Reset the list
 	for conn := range h.connections {
 		// Using remote address or local if remote not available
 		connDesc := conn.RemoteAddr().String()
 		if connDesc == "" {
 			connDesc = conn.LocalAddr().String()
 		}
-		h.status.Connections = append(h.status.Connections, connDesc)
+		connections = append(connections, connDesc)
 	}
+	h.status.Connections = connections
 
 	return h.status
 }
@@ -101,6 +104,7 @@ func (h *SocketHandler) connectClient() {
 	h.mu.Lock()
 	h.connections[conn] = struct{}{}
 	h.mu.Unlock()
+
 	h.manageStream(conn)
 }
 
@@ -111,8 +115,10 @@ func (h *SocketHandler) startServer() {
 		fmt.Printf("Error creating socket: %#v %s", err, err.Error())
 		return
 	}
+	h.mu.Lock()
 	h.listener = ln
 	h.status.Address = ln.Addr().String()
+	h.mu.Unlock()
 
 	for {
 		conn, err := h.listener.Accept()
@@ -147,8 +153,12 @@ func (h *SocketHandler) handleWrite(conn net.Conn) {
 	if h.writeDeadline > 0 {
 		conn.SetWriteDeadline(time.Now().Add(h.writeDeadline))
 	}
-	for batch := range h.dataChan {
-		_, err := conn.Write(batch)
+	for {
+		data := h.dataChan.Receive()
+		if data == nil {
+			break // Channel closed
+		}
+		_, err := conn.Write(data)
 		if err != nil {
 			fmt.Println("Error writing to connection:", err)
 			break // Exit if there is an error writing
@@ -171,7 +181,10 @@ func (h *SocketHandler) handleRead(conn net.Conn) {
 			break // Exit on error or when EOF is reached
 		}
 		// Send the data to the data channel for further processing
-		h.dataChan <- readBuffer[:n]
+		err = h.dataChan.Send(readBuffer[:n])
+		if err != nil {
+			break
+		}
 	}
 }
 
@@ -186,5 +199,6 @@ func (h *SocketHandler) Close() error {
 		conn.Close()
 	}
 	h.connections = nil
+	h.dataChan.Close()
 	return nil
 }

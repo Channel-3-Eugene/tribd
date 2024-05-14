@@ -12,5 +12,6 @@ require (
 )
 
 replace github.com/Channel-3-Eugene/tribd/mpegts => ../mpegts
-
 replace github.com/Channel-3-Eugene/tribd/config => ../config
+replace github.com/Channel-3-Eugene/tribd/channels => ../channels
+

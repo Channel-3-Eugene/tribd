@@ -12,38 +12,31 @@ import (
 
 // TestNewSocketHandler checks the initialization of a new SocketHandler to ensure all fields are set as expected.
 func TestNewSocketHandler(t *testing.T) {
-	dataChan := make(chan []byte)
 	socketPath := randSocketPath()
-	handler := NewSocketHandler(socketPath, 0, 0, Server, Reader, dataChan)
+	handler := NewSocketHandler(socketPath, 0, 0, Server, Reader)
+	dataChan := handler.dataChan
+
 	assert.Equal(t, socketPath, handler.socketPath)
 	assert.Equal(t, 0*time.Second, handler.readDeadline)
 	assert.Equal(t, 0*time.Second, handler.writeDeadline)
 	assert.Equal(t, Server, handler.mode)
 	assert.Equal(t, Reader, handler.role)
-	assert.Equal(t, dataChan, handler.dataChan)
+	assert.NotNil(t, dataChan)
 	assert.NotNil(t, handler.connections)
 }
 
 // TestSocketServerWriterClientReader tests the interaction between a server set to write and a client set to read.
 func TestSocketServerWriterClientReader(t *testing.T) {
-	writerChan := make(chan []byte)
-	readerChan := make(chan []byte)
-
 	randomSocketPath := randSocketPath()
 
 	// Initialize server to write data.
-	serverWriter := NewSocketHandler(randomSocketPath, 0, 0, Server, Writer, writerChan)
+	serverWriter := NewSocketHandler(randomSocketPath, 0, 0, Server, Writer)
 	serverWriter.Open()
-	// Ensure the server is ready.
-	for {
-		if serverWriter.listener != nil {
-			break
-		}
-		time.Sleep(100 * time.Microsecond)
-	}
+
+	time.Sleep(time.Millisecond) // Short sleep to prevent busy waiting
 
 	// Initialize client to read data.
-	clientReader := NewSocketHandler(randomSocketPath, 10*time.Millisecond, 10*time.Millisecond, Client, Reader, readerChan)
+	clientReader := NewSocketHandler(randomSocketPath, 10*time.Millisecond, 10*time.Millisecond, Client, Reader)
 	clientReader.Open()
 
 	t.Run("TestNewSocketHandler", func(t *testing.T) {
@@ -60,37 +53,36 @@ func TestSocketServerWriterClientReader(t *testing.T) {
 			t.Fatal("Failed to generate random bytes:", err)
 		}
 		fmt.Println("Sending data...")
-		writerChan <- randBytes
+
+		go func() {
+			err := serverWriter.dataChan.Send(randBytes)
+			assert.Nil(t, err)
+			serverWriter.dataChan.Close()
+		}()
 		fmt.Println("Sent data")
 
 		select {
-		case data := <-readerChan:
-			fmt.Println("Data received.")
-			assert.Equal(t, randBytes, data)
 		case <-time.After(100 * time.Millisecond):
 			t.Error("Timeout waiting for data")
+		default:
+			data := clientReader.dataChan.Receive()
+			assert.Equal(t, randBytes, data)
 		}
 	})
 }
 
 // TestSocketServerReaderClientWriter tests the interaction between a server set to read and a client set to write.
 func TestSocketServerReaderClientWriter(t *testing.T) {
-	writerChan := make(chan []byte)
-	readerChan := make(chan []byte)
+	randomSocketPath := randSocketPath()
 
 	// Initialize server to read data.
-	serverReader := NewSocketHandler(randSocketPath(), 0, 0, Server, Reader, readerChan)
+	serverReader := NewSocketHandler(randomSocketPath, 0, 0, Server, Reader)
 	serverReader.Open()
-	// Ensure the server is ready.
-	for {
-		if serverReader.listener != nil {
-			break
-		}
-		time.Sleep(100 * time.Microsecond)
-	}
+
+	time.Sleep(time.Millisecond) // Short sleep to prevent busy waiting
 
 	// Initialize client to write data.
-	clientWriter := NewSocketHandler(serverReader.socketPath, 10*time.Millisecond, 10*time.Millisecond, Client, Writer, writerChan)
+	clientWriter := NewSocketHandler(serverReader.socketPath, 10*time.Millisecond, 10*time.Millisecond, Client, Writer)
 	clientWriter.Open()
 
 	t.Run("TestNewSocketHandler", func(t *testing.T) {
@@ -107,13 +99,19 @@ func TestSocketServerReaderClientWriter(t *testing.T) {
 	t.Run("TestWriteData", func(t *testing.T) {
 		randBytes := make([]byte, 188)
 		_, _ = rand.Read(randBytes)
-		writerChan <- randBytes
+
+		go func() {
+			err := clientWriter.dataChan.Send(randBytes)
+			assert.Nil(t, err)
+			clientWriter.dataChan.Close()
+		}()
 
 		select {
-		case data := <-readerChan:
-			assert.Equal(t, randBytes, data)
-		case <-time.After(5 * time.Millisecond):
+		case <-time.After(100 * time.Millisecond):
 			assert.Fail(t, "Timeout waiting for data")
+		default:
+			data := serverReader.dataChan.Receive()
+			assert.Equal(t, randBytes, data)
 		}
 	})
 }

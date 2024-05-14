@@ -5,12 +5,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Channel-3-Eugene/tribd/channels"
 	"github.com/stretchr/testify/assert"
 )
 
+// TestNewTCPHandler tests the creation of a new TCPHandler instance.
 func TestNewTCPHandler(t *testing.T) {
-	dataChan := make(chan []byte)
-	handler := NewTCPHandler(":0", 0, 0, Server, Reader, dataChan)
+	dataChan := channels.NewPacketChan(1)
+	handler := NewTCPHandler(":0", 0, 0, Server, Reader)
+	handler.dataChan = dataChan
 	assert.Equal(t, ":0", handler.address)
 	assert.Equal(t, 0*time.Second, handler.readDeadline)
 	assert.Equal(t, 0*time.Second, handler.writeDeadline)
@@ -20,17 +23,20 @@ func TestNewTCPHandler(t *testing.T) {
 	assert.NotNil(t, handler.connections)
 }
 
-func TestServerWriterClientReader(t *testing.T) {
-	writerChan := make(chan []byte)
-	readerChan := make(chan []byte)
+// TestTCPServerWriterClientReader tests the TCPHandler functionality with a server in writer role and a client in reader role.
+func TestTCPServerWriterClientReader(t *testing.T) {
+	writerChan := channels.NewPacketChan(1)
+	readerChan := channels.NewPacketChan(1)
 
-	serverWriter := NewTCPHandler(":0", 0, 0, Server, Writer, writerChan)
+	serverWriter := NewTCPHandler(":0", 0, 0, Server, Writer)
+	serverWriter.dataChan = writerChan
 	err := serverWriter.Open()
 	assert.Nil(t, err)
 
 	serverWriterAddr := serverWriter.Status().Address
 
-	clientReader := NewTCPHandler(serverWriterAddr, 0, 0, Client, Reader, readerChan)
+	clientReader := NewTCPHandler(serverWriterAddr, 0, 0, Client, Reader)
+	clientReader.dataChan = readerChan
 	err = clientReader.Open()
 	assert.Nil(t, err)
 
@@ -44,13 +50,14 @@ func TestServerWriterClientReader(t *testing.T) {
 	t.Run("TestWriteData", func(t *testing.T) {
 		randBytes := make([]byte, 188)
 		_, _ = rand.Read(randBytes)
-		writerChan <- randBytes
+		writerChan.Send(randBytes)
 
 		select {
-		case data := <-readerChan:
-			assert.Equal(t, randBytes, data)
 		case <-time.After(5 * time.Millisecond):
 			assert.Fail(t, "Timeout waiting for data")
+		default:
+			data := readerChan.Receive()
+			assert.Equal(t, randBytes, data)
 		}
 
 		status := serverWriter.Status()
@@ -58,17 +65,20 @@ func TestServerWriterClientReader(t *testing.T) {
 	})
 }
 
-func TestServerReaderClientWriter(t *testing.T) {
-	writerChan := make(chan []byte)
-	readerChan := make(chan []byte)
+// TestTCPServerReaderClientWriter tests the TCPHandler functionality with a server in reader role and a client in writer role.
+func TestTCPServerReaderClientWriter(t *testing.T) {
+	writerChan := channels.NewPacketChan(1)
+	readerChan := channels.NewPacketChan(1)
 
-	serverReader := NewTCPHandler(":0", 0, 0, Server, Reader, readerChan)
+	serverReader := NewTCPHandler(":0", 0, 0, Server, Reader)
+	serverReader.dataChan = readerChan
 	err := serverReader.Open()
 	assert.Nil(t, err)
 
 	serverReaderAddr := serverReader.Status().Address
 
-	clientWriter := NewTCPHandler(serverReaderAddr, 0, 0, Client, Writer, writerChan)
+	clientWriter := NewTCPHandler(serverReaderAddr, 0, 0, Client, Writer)
+	clientWriter.dataChan = writerChan
 	err = clientWriter.Open()
 	assert.Nil(t, err)
 
@@ -88,13 +98,14 @@ func TestServerReaderClientWriter(t *testing.T) {
 	t.Run("TestWriteData", func(t *testing.T) {
 		randBytes := make([]byte, 188)
 		_, _ = rand.Read(randBytes)
-		writerChan <- randBytes
+		writerChan.Send(randBytes)
 
 		select {
-		case data := <-readerChan:
-			assert.Equal(t, randBytes, data)
 		case <-time.After(5 * time.Millisecond):
 			assert.Fail(t, "Timeout waiting for data")
+		default:
+			data := readerChan.Receive()
+			assert.Equal(t, randBytes, data)
 		}
 
 		assert.Equal(t, 1, len(serverReader.Status().Connections))
@@ -105,17 +116,20 @@ func TestServerReaderClientWriter(t *testing.T) {
 	})
 }
 
+// TestServerWriterClientReaderTCP tests the TCPHandler functionality with a server in writer role and a client in reader role, ensuring proper data transfer.
 func TestServerWriterClientReaderTCP(t *testing.T) {
-	writerChan := make(chan []byte, 1)
-	readerChan := make(chan []byte, 1)
+	writerChan := channels.NewPacketChan(1)
+	readerChan := channels.NewPacketChan(1)
 
-	serverWriter := NewTCPHandler(":0", 0, 0, Server, Writer, writerChan)
+	serverWriter := NewTCPHandler(":0", 0, 0, Server, Writer)
+	serverWriter.dataChan = writerChan
 	err := serverWriter.Open()
 	assert.Nil(t, err)
 
 	serverWriterAddr := serverWriter.Status().Address
 
-	clientReader := NewTCPHandler(serverWriterAddr, 0, 0, Client, Reader, readerChan)
+	clientReader := NewTCPHandler(serverWriterAddr, 0, 0, Client, Reader)
+	clientReader.dataChan = readerChan
 	err = clientReader.Open()
 	assert.Nil(t, err)
 
@@ -134,13 +148,14 @@ func TestServerWriterClientReaderTCP(t *testing.T) {
 	t.Run("TestWriteData", func(t *testing.T) {
 		randBytes := make([]byte, 188)
 		_, _ = rand.Read(randBytes)
-		writerChan <- randBytes
+		writerChan.Send(randBytes)
 
 		select {
-		case data := <-readerChan:
-			assert.Equal(t, randBytes, data)
 		case <-time.After(5 * time.Second):
 			assert.Fail(t, "Timeout waiting for data")
+		default:
+			data := readerChan.Receive()
+			assert.Equal(t, randBytes, data)
 		}
 	})
 

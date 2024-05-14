@@ -10,102 +10,104 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestNewFileHandler verifies that a new FileHandler is correctly initialized with specified parameters.
 func TestNewFileHandler(t *testing.T) {
-	dataChan := make(chan []byte, 1)
 	filePath := randFileName()
 	readTimeout := 5 * time.Millisecond
 	writeTimeout := 5 * time.Millisecond
 
-	handler := NewFileHandler(filePath, Writer, false, dataChan, readTimeout, writeTimeout)
+	handler := NewFileHandler(filePath, Writer, false, readTimeout, writeTimeout)
+	dataChan := handler.dataChan
 
+	// Assert that all properties are set as expected.
 	assert.Equal(t, filePath, handler.filePath)
 	assert.Equal(t, Writer, handler.role)
 	assert.Equal(t, false, handler.isFIFO)
-	assert.Equal(t, dataChan, handler.dataChan)
+	assert.NotNil(t, dataChan)
 	assert.Equal(t, readTimeout, handler.readTimeout)
 	assert.Equal(t, writeTimeout, handler.writeTimeout)
 }
 
+// TestFileHandlerOpenAndClose tests the Open and Close methods of the FileHandler to ensure files are correctly managed.
 func TestFileHandlerOpenAndClose(t *testing.T) {
-	dataChan := make(chan []byte)
 	filePath := randFileName()
 
-	// Cleanup before test
+	// Ensure any existing file with the same name is removed before starting the test.
 	os.Remove(filePath)
 
-	handler := NewFileHandler(filePath, Writer, false, dataChan, 0, 0)
+	// Open the handler and verify that the file exists after opening.
+	handler := NewFileHandler(filePath, Writer, false, 0, 0)
 	err := handler.Open()
 	assert.Nil(t, err)
 	assert.FileExists(t, filePath)
 
-	// Test closure
+	// Close the handler and check if the file still accessible, indicating proper closure.
 	err = handler.Close()
 	assert.Nil(t, err)
 
-	// Check if file can be re-opened, indicating it was properly closed
+	// Check if file can be re-opened, indicating it was properly closed.
 	file, err := os.OpenFile(filePath, os.O_WRONLY, 0666)
 	assert.Nil(t, err)
 	file.Close()
 
-	// Cleanup after test
+	// Clean up the created file after the test.
 	os.Remove(filePath)
 }
 
+// TestFileHandlerFIFO checks the functionality of the FileHandler with FIFO specific operations.
 func TestFileHandlerFIFO(t *testing.T) {
-	dataChan := make(chan []byte)
 	filePath := randFileName()
-	handler := NewFileHandler(filePath, Reader, true, dataChan, 1, 1)
+	handler := NewFileHandler(filePath, Reader, true, 1, 1)
 
-	// Defer cleanup
-	defer handler.Close()
-	defer os.Remove(filePath)
-
+	// Open the handler as a FIFO and ensure the FIFO file exists.
 	err := handler.Open()
 	assert.Nil(t, err)
-
-	// FIFO file should exist
 	_, err = os.Stat(filePath)
 	assert.Nil(t, err)
 
-	// Ensure FIFO can be opened by another process as Writer
+	// Test opening the FIFO by another process to simulate a writer.
 	writer, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE, 0666)
 	assert.Nil(t, err)
 	writer.Close()
 }
 
+// TestFileHandlerDataFlow tests the complete cycle of writing to and reading from the file.
 func TestFileHandlerDataFlow(t *testing.T) {
 	filePath := randFileName()
 
-	// Initialize handlers
-	writeChan := make(chan []byte)
-	writer := NewFileHandler(filePath, Writer, false, writeChan, 0, 0)
+	// Initialize writer and reader handlers.
+	writer := NewFileHandler(filePath, Writer, false, 0, 0)
 	writer.Open()
 
-	readChan := make(chan []byte)
-	reader := NewFileHandler(filePath, Reader, false, readChan, 0, 0)
+	reader := NewFileHandler(filePath, Reader, false, 0, 0)
 	reader.Open()
 
-	// Write data
+	// Write data to the file.
 	testData := []byte("hello, world")
-	writeChan <- testData
-	close(writeChan)
+	go func() {
+		err := writer.dataChan.Send(testData)
+		assert.Nil(t, err)
+		writer.dataChan.Close()
+	}()
 
-	// Read data
+	// Attempt to read the data and check if matches what was written.
 	select {
-	case receivedData := <-readChan:
-		assert.Equal(t, testData, receivedData)
 	case <-time.After(5 * time.Millisecond):
 		assert.Fail(t, "Timeout waiting for data")
+	default:
+		receivedData := reader.dataChan.Receive()
+		assert.Equal(t, testData, receivedData)
 	}
 
-	// Clean up
+	// Clean up resources and remove test file.
 	writer.Close()
 	reader.Close()
 	os.Remove(filePath)
 }
 
+// randFileName generates a random filename for testing, reducing the chance of file conflicts.
 func randFileName() string {
-	randBytes := make([]byte, 8) // 8 bytes -> 16 characters in hex
+	randBytes := make([]byte, 8) // Generates a unique identifier of 16 hex characters.
 	_, err := rand.Read(randBytes)
 	if err != nil {
 		return ""

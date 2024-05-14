@@ -41,8 +41,8 @@ type FileHandler struct {
 	isFIFO       bool
 	readTimeout  time.Duration
 	writeTimeout time.Duration
-	isOpen       bool       // Tracks the open or closed state of the file.
-	mu           sync.Mutex // mu is a mutex for synchronizing access to connections and other shared resources.
+	isOpen       bool         // Tracks the open or closed state of the file.
+	mu           sync.RWMutex // Use RWMutex to allow concurrent reads
 }
 
 // NewFileHandler creates a new FileHandler with specified configurations.
@@ -61,6 +61,8 @@ func NewFileHandler(filePath string, role Role, isFIFO bool, readTimeout, writeT
 
 // Status provides the current status of the FileHandler.
 func (h *FileHandler) Status() FileStatus {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	return FileStatus{
 		FilePath:     h.filePath,
 		IsFIFO:       h.isFIFO,
@@ -126,6 +128,12 @@ func (h *FileHandler) Close() error {
 	return nil
 }
 
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 4096)
+	},
+}
+
 // readData handles the data reading operations from the file based on configured timeouts.
 func (h *FileHandler) readData() {
 	var err error
@@ -139,37 +147,38 @@ func (h *FileHandler) readData() {
 	}
 	defer h.file.Close()
 
-	buffer := make([]byte, 4096)
 	for {
+		buffer := bufferPool.Get().([]byte)
 		if h.readTimeout > 0 {
 			select {
 			case <-time.After(h.readTimeout):
+				bufferPool.Put(buffer)
 				return // Exit the goroutine after a timeout.
 			default:
 				n, err := h.file.Read(buffer)
 				if err != nil {
 					if err == io.EOF || err == syscall.EINTR {
+						bufferPool.Put(buffer)
 						continue
 					}
+					bufferPool.Put(buffer)
 					return
 				}
-				err = h.dataChan.Send(buffer[:n])
-				if err != nil {
-					return
-				}
+				h.dataChan.Send(buffer[:n])
+				bufferPool.Put(buffer)
 			}
 		} else {
 			n, err := h.file.Read(buffer)
 			if err != nil {
 				if err == io.EOF || err == syscall.EINTR {
+					bufferPool.Put(buffer)
 					continue
 				}
+				bufferPool.Put(buffer)
 				return
 			}
-			err = h.dataChan.Send(buffer[:n])
-			if err != nil {
-				return
-			}
+			h.dataChan.Send(buffer[:n])
+			bufferPool.Put(buffer)
 		}
 	}
 }

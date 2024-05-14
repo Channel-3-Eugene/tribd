@@ -2,6 +2,7 @@ package uriHandler
 
 import (
 	"crypto/rand"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,6 +12,12 @@ import (
 
 // TestNewTCPHandler tests the creation of a new TCPHandler instance.
 func TestNewTCPHandler(t *testing.T) {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		fmt.Printf("TestNewTCPHandler took %v\n", duration)
+	}()
+
 	dataChan := channels.NewPacketChan(1)
 	handler := NewTCPHandler(":0", 0, 0, Server, Reader)
 	handler.dataChan = dataChan
@@ -25,6 +32,12 @@ func TestNewTCPHandler(t *testing.T) {
 
 // TestTCPServerWriterClientReader tests the TCPHandler functionality with a server in writer role and a client in reader role.
 func TestTCPServerWriterClientReader(t *testing.T) {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		fmt.Printf("TestTCPServerWriterClientReader took %v\n", duration)
+	}()
+
 	writerChan := channels.NewPacketChan(1)
 	readerChan := channels.NewPacketChan(1)
 
@@ -67,6 +80,12 @@ func TestTCPServerWriterClientReader(t *testing.T) {
 
 // TestTCPServerReaderClientWriter tests the TCPHandler functionality with a server in reader role and a client in writer role.
 func TestTCPServerReaderClientWriter(t *testing.T) {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		fmt.Printf("TestTCPServerReaderClientWriter took %v\n", duration)
+	}()
+
 	writerChan := channels.NewPacketChan(1)
 	readerChan := channels.NewPacketChan(1)
 
@@ -118,6 +137,12 @@ func TestTCPServerReaderClientWriter(t *testing.T) {
 
 // TestServerWriterClientReaderTCP tests the TCPHandler functionality with a server in writer role and a client in reader role, ensuring proper data transfer.
 func TestServerWriterClientReaderTCP(t *testing.T) {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		fmt.Printf("TestServerWriterClientReaderTCP took %v\n", duration)
+	}()
+
 	writerChan := channels.NewPacketChan(1)
 	readerChan := channels.NewPacketChan(1)
 

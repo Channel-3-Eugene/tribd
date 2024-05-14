@@ -12,6 +12,12 @@ import (
 
 // TestNewSocketHandler checks the initialization of a new SocketHandler to ensure all fields are set as expected.
 func TestNewSocketHandler(t *testing.T) {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		fmt.Printf("TestNewSocketHandler took %v\n", duration)
+	}()
+
 	socketPath := randSocketPath()
 	handler := NewSocketHandler(socketPath, 0, 0, Server, Reader)
 	dataChan := handler.dataChan
@@ -27,6 +33,12 @@ func TestNewSocketHandler(t *testing.T) {
 
 // TestSocketServerWriterClientReader tests the interaction between a server set to write and a client set to read.
 func TestSocketServerWriterClientReader(t *testing.T) {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		fmt.Printf("TestSocketServerWriterClientReader took %v\n", duration)
+	}()
+
 	randomSocketPath := randSocketPath()
 
 	// Initialize server to write data.
@@ -62,7 +74,7 @@ func TestSocketServerWriterClientReader(t *testing.T) {
 		fmt.Println("Sent data")
 
 		select {
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(10 * time.Millisecond):
 			t.Error("Timeout waiting for data")
 		default:
 			data := clientReader.dataChan.Receive()
@@ -73,6 +85,12 @@ func TestSocketServerWriterClientReader(t *testing.T) {
 
 // TestSocketServerReaderClientWriter tests the interaction between a server set to read and a client set to write.
 func TestSocketServerReaderClientWriter(t *testing.T) {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		fmt.Printf("TestSocketServerReaderClientWriter took %v\n", duration)
+	}()
+
 	randomSocketPath := randSocketPath()
 
 	// Initialize server to read data.
@@ -107,7 +125,7 @@ func TestSocketServerReaderClientWriter(t *testing.T) {
 		}()
 
 		select {
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(10 * time.Millisecond):
 			assert.Fail(t, "Timeout waiting for data")
 		default:
 			data := serverReader.dataChan.Receive()

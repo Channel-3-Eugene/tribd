@@ -1,3 +1,4 @@
+// Package uriHandler provides utilities for handling different types of socket communications.
 package uriHandler
 
 import (
@@ -41,7 +42,7 @@ type TCPHandler struct {
 	listener      net.Listener          // listener represents the TCP listener for server mode.
 	dataChan      *channels.PacketChan  // dataChan is a PacketChan for sending and receiving data.
 	connections   map[net.Conn]struct{} // connections holds a map of active TCP connections.
-	mu            sync.Mutex            // mu is a mutex for synchronizing access to connections and other shared resources.
+	mu            sync.RWMutex          // Use RWMutex to allow concurrent reads.
 
 	status TCPStatus // status represents the current status of the TCPHandler.
 }
@@ -81,8 +82,8 @@ func (h *TCPHandler) Open() error {
 
 // Status returns the current status of the TCPHandler.
 func (h *TCPHandler) Status() TCPStatus {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 
 	// Populate the connections map with active connection information.
 	for c := range h.connections {
@@ -114,7 +115,9 @@ func (h *TCPHandler) startServer() error {
 		return err
 	}
 	h.listener = ln
+	h.mu.Lock()
 	h.status.Address = ln.Addr().String()
+	h.mu.Unlock()
 	go h.acceptClients()
 	return nil
 }

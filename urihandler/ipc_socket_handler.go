@@ -40,7 +40,7 @@ type SocketHandler struct {
 	listener      net.Listener
 	dataChan      *channels.PacketChan
 	connections   map[net.Conn]struct{}
-	mu            sync.Mutex
+	mu            sync.RWMutex // Use RWMutex to allow concurrent reads
 	status        SocketStatus
 }
 
@@ -77,8 +77,8 @@ func (h *SocketHandler) Open() error {
 
 // Status returns the current status of the socket.
 func (h *SocketHandler) Status() SocketStatus {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 
 	connections := []string{} // Reset the list
 	for conn := range h.connections {

@@ -2,6 +2,7 @@ package uriHandler
 
 import (
 	"crypto/rand"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,6 +12,12 @@ import (
 
 // TestNewUDPHandler verifies the creation and initialization of a new UDPHandler with specific configuration settings.
 func TestNewUDPHandler(t *testing.T) {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		fmt.Printf("TestNewUDPHandler took %v\n", duration)
+	}()
+
 	sources := []string{}      // No allowed sources specified for this test.
 	destinations := []string{} // No destinations specified for this test.
 
@@ -30,6 +37,12 @@ func TestNewUDPHandler(t *testing.T) {
 
 // TestUDPHandlerDataFlow tests the UDP data flow from a writer to a reader to ensure data sent by the writer is correctly received by the reader.
 func TestUDPHandlerDataFlow(t *testing.T) {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		fmt.Printf("TestUDPHandlerDataFlow took %v\n", duration)
+	}()
+
 	readChan := channels.NewPacketChan(1)
 
 	// Setup writer and reader handlers, each on separate local UDP addresses.
@@ -67,7 +80,7 @@ func TestUDPHandlerDataFlow(t *testing.T) {
 
 		// Wait to receive data on the reader channel or fail after a timeout.
 		select {
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(10 * time.Millisecond):
 			assert.Fail(t, "Timeout waiting for data") // Fail test if no data is received in time.
 		default:
 			data := readChan.Receive()

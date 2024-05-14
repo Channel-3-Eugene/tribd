@@ -3,6 +3,7 @@ package uriHandler
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -12,6 +13,12 @@ import (
 
 // TestNewFileHandler verifies that a new FileHandler is correctly initialized with specified parameters.
 func TestNewFileHandler(t *testing.T) {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		fmt.Printf("TestNewFileHandler took %v\n", duration)
+	}()
+
 	filePath := randFileName()
 	readTimeout := 5 * time.Millisecond
 	writeTimeout := 5 * time.Millisecond
@@ -30,6 +37,12 @@ func TestNewFileHandler(t *testing.T) {
 
 // TestFileHandlerOpenAndClose tests the Open and Close methods of the FileHandler to ensure files are correctly managed.
 func TestFileHandlerOpenAndClose(t *testing.T) {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		fmt.Printf("TestFileHandlerOpenAndClose took %v\n", duration)
+	}()
+
 	filePath := randFileName()
 
 	// Ensure any existing file with the same name is removed before starting the test.
@@ -56,6 +69,12 @@ func TestFileHandlerOpenAndClose(t *testing.T) {
 
 // TestFileHandlerFIFO checks the functionality of the FileHandler with FIFO specific operations.
 func TestFileHandlerFIFO(t *testing.T) {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		fmt.Printf("TestFileHandlerFIFO took %v\n", duration)
+	}()
+
 	filePath := randFileName()
 	handler := NewFileHandler(filePath, Reader, true, 1, 1)
 
@@ -73,6 +92,12 @@ func TestFileHandlerFIFO(t *testing.T) {
 
 // TestFileHandlerDataFlow tests the complete cycle of writing to and reading from the file.
 func TestFileHandlerDataFlow(t *testing.T) {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		fmt.Printf("TestFileHandlerDataFlow took %v\n", duration)
+	}()
+
 	filePath := randFileName()
 
 	// Initialize writer and reader handlers.

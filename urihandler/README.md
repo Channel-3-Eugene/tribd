@@ -126,7 +126,7 @@ func main() {
 
 #### Features
 
-- Non-connection-based Communication: Unlike TCP, UDP does not establish a connection, which means it can send messages with lower latency.
+- Non-connection-based Communication: Unlike TCP, UDP does not establish a connection, which means it can send messages with lower initial latency. However, for ongoing transmission, TCP can achieve similar or even lower latency due to network optimizations such as large send offload and driver/hardware segmentation.
 - Broadcast and Multicast: Supports broadcasting messages to multiple recipients and multicasting to a selected group of listeners.
 - Lightweight Protocol: Ideal for applications that require fast, efficient communication, such as real-time services.
 - Configurable Buffer Sizes: Allows adjustment of read and write buffer sizes to optimize for throughput or memory usage.

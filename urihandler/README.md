@@ -17,6 +17,7 @@ import "github.com/Channel-3-Eugene/tribd/urihandler"
 ### Handlers provided 
 
 - File Handler: Perform file operations, including reading from and writing to files, with support for named pipes (FIFOs).
+- IPC Handler: Send and receive data using Unix domain sockets.
 - UDP Handler: Handle UDP data transmission with support for both sending and receiving data.
 - TCP Handler: Manage TCP connections for sending and receiving data.
 
